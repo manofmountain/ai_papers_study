@@ -1,13 +1,22 @@
-Title         : Welcome
-Author        : You
+Title         : R-CNN系列其二：SPP-Net
+Author        : manofmountain
 Logo          : True
 
 [TITLE]
 
-# Madoko 
+# 介绍 
 
-Madoko is a fast markdown processor for writing professional articles
-with a focus on simplicity and plain text readability.
+我们平时用于做物体分类或检测的CNN网络多是由两部分来组成，前端的CNN层构成的网络用于图片特征的抽象化提取与后端的FC层构成的网络用于具体的问题处理如分类或物体位置识别。因为模型中后端FC层的存在，意味着它只能接受固定大小的输入即每次输入tensor的维数必须相同。这带来一个问题即我们只能使用统一大小的图片作为网络输入，如此才能在前端CNN网络层的最后输出具有一致维数大小的数据特征集合（feature map）给接下来的网络层使用。为此很多时候，我们的网络在图片输入之前不得不对其进行一些处理如剪切（crop）或失真式变行（Warp），这些处理或会导致图片分辨率有变化，甚至可能使得输入图像有内容损失。
+
+来自微软Sun, Jian老师的团队想到了一种可对任意大小的feature map输入进行Pooling处理来生成固定大小的空间金字塔式层化方法（Spatial pyramid pooling，简称SPP）。此种SPP层化方法被加在前端CNN层网络的最后一级feature map输出后可生成固定大小的特征来。这样就实现了CNN网络结构与图片输入大小之间的解耦。。理论上我们可以使用任意大小的图片作用CNN网络的输入了即使在网络的最后我们有FC层。
+
+如下图中可以看到使用此层所能解决的CNN网络对输入图片大小存在依赖的问题。
+
+![CNN网络使用SPP层前后对输入图片所进行的处理]
+
+[CNN网络使用SPP层前后对输入图片所进行的处理]: images/CNN-SPP-.JPG "CNN网络使用SPP层前后对输入图片所进行的处理" { width:auto; max-width:90% }
+
+# 
 
 * Read the [reference manual].
 * Explore the upper-right toolbox menu to discover how Markdown works. 
