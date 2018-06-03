@@ -1,0 +1,421 @@
+Title         : R-CNN系列其一：R-CNN 
+Author        : 咸鱼 
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+  本系列文章将会向大家介绍下R-CNN系列深度学习网络是如何来逐步进化（从检测精度与执行时间两个方向）以解决物体识别问题的。此篇是该系列文章的第一篇，试图向大家详细描述下2014年
+来自伯克利的Ross Girshick是如何前瞻性地使用深度学习CNN网络来初次成功解决物体识别问题的。
+
+# 何为物体检测（object detection）问题？
+
+  物体检测问题要解决的是如何让计算机来认识出图片中的具体物体及它们在图片中所处的位置。本质上它是模式识别学科的一个基本问题。
+
+# 物体识别问题的解决方法
+  过去在深度学习网络大规模使用之前一般会使用传统的机器学习方法通过对图片进行特征工程以选取有效的特征，进而其于所选择的特征进行建模（如逻辑回归、SVM、贝叶斯网络等）以来识别
+出图片之上所具有的位置及其位置。2014年之后，随着深度学习网络在分类问题中的成功应用（典型的像Alexnet网络在2012年的ILSVRC分类识别竞赛中取得第一名），越来越多关注机器学习方法的人
+开始考虑使用深度学习方法来解决他们自己领域的问题。其中物体识别问题也是受益于深度学习的发展而被更好地解决。此系列文章都是基于深度学习网络去解决物体检测问题。而它也是目前最有效的
+解决物体检测问题的方法。
+
+# R-CNN物体检测系统结构
+
+  * 下图是R-CNN用于进行物体检测的流水线图。对于此模型，它的输入为需要检测物体的图片，其输出则是图片中每个具体的物体名称以及它们在图片中所处的位置；
+  * 对于输入的每张图片，先采用传统的特征区域提取办法（此处使用Selective Search方法，其它可选的方法还有objectness，constrained parametric min-cuts (CPMC) 等）提取出固定数目的
+区域提案来（此处为2000个），然后将每个区域提案（Region proposal）进行变形为固定大小（此处为227x227）的图以作为接下来CNN网络的输入；
+  * 每个由上步产生并变形为固定大小的图经过CNN网络后输出为一个特征向量（经过了若干CNN层后，由FC层变化为最终的一维特征向量）；
+  * 由上步CNN处理过后的一维特征向量作为接下来SVM的输入进行SVM物体识别分类，从而决定出此区域方案属于哪一类；
+  * 以上四个步骤都能在下图中得到反映。但实际上作者还有另外一个处理步骤即使用最后由CNN生成的特征向量来生成逻辑回归模型以对每个区域提案在图片中的位置进行调整。而此步骤在作者的讨论中有提及却
+没能很好地反映在下图当中。
+![R-CNN_物体检测系统结构]
+
+[R-CNN_物体检测系统结构]: images/R-CNN_-.JPG "R-CNN_物体检测系统结构" { width:auto; max-width:90% }
+
+# 如何训练此模型？
+
+  既然是机器学习模型，那么就涉及到如何训练的问题。以下为此模型的详细训练方法。
+
+  * 先使用ILSVRC2012分类数据集来预训练我们上图中所用到的CNN网络，此步骤中只使用分类的数据集使得我们的CNN网络学会基本的图像识别（在图像level上的而不是其上的具体物体，因为此处用到的数据集中也
+不含有包含物体具体位置信息的Annotation box）；
+  * 上个阶段完成后，我们使用真正要进行物体检测的数据集（此处为VOC0712数据集）所生成的有着固定大小的区域提案对trained过的CNN网络继续进行训练（此方法又叫finetune），最终经过一定的epochs数目，
+就得到了trained好的我们最终将采用的CNN网络；
+  * 使用上个步骤trained好的CNN网络，我们可以将每个图片上的区域提案转换为一个定长的（此处为4096）特征向量；将此特征向量作为输入，我们按下来再训练一个N个（此处N为图片上物体可能的类别数目）SVM二分
+类模型来解决特征区域的分类问题，如此就能确定出我们最开始使用Selective Search方法所得到的图片上的
+某个区域提案有多大的概率属于哪一类物体；
+  * 至此问题看似完美解决了，可实际中作者实验却发现此方法检测出的物体的位置存在着较大的偏差。作者于是使用CNN网络中Pool5层输出的feature map作为特征，来重新训练了一个逻辑回归模型以来对特征提案的
+位置信息进行较正，最终得到了较高的MAP值。
+
+# 实际部署所需的时间及其它性能分析
+
+  R-CNN算是首次使用CNN的方法来提取图片中的特征（有效地避免了传统机器学习算法中特征工程的使用）以进行图片中物体检测。与之前的方法相比，它可以使用一个可共享参数（多个不同的类别之间）的CNN来得到图片的特征
+进行再基于此特征对每个类分别训练不同的SVM模型进行后续的分类。最终在实际平台上测试时，此方法每处理一张图片上的区域提案获取与相应的CNN特征，平均需要在GPU上耗费13s，在CPU上则为53s。作者在论文中还有使用UVA
+的方法来近似模拟矩阵相乘运算以减少计算时间。  最后在VOC2007数据集上，它的MAP值能达到59%。
+
+# 实际代码示例
+* 使用Selective search方法提取图中的区域提案
+
+     function boxes = selective_search_boxes(im, fast_mode, im_width)
+      % Based on the demo.m file included in the Selective Search IJCV code.
+      % Parameters. Note that this controls the number of hierarchical
+      % segmentations which are combined.
+      colorTypes = {'Hsv', 'Lab', 'RGI', 'H', 'Intensity'};
+      % Here you specify which similarity functions to use in merging
+      simFunctionHandles = {@SSSimColourTextureSizeFillOrig, ...
+                            @SSSimTextureSizeFill, ...
+                            @SSSimBoxFillOrig, ...
+                            @SSSimSize};
+      % Thresholds for the Felzenszwalb and Huttenlocher segmentation algorithm.
+      % Note that by default, we set minSize = k, and sigma = 0.8.
+      % controls size of segments of initial segmentation. 
+      ks = [50 100 150 300];
+      sigma = 0.8;
+      
+      % After segmentation, filter out boxes which have a width/height smaller
+      % than minBoxWidth (default = 20 pixels).
+      minBoxWidth = 20;
+      
+      % Comment the following three lines for the 'quality' version
+      if fast_mode
+        colorTypes = colorTypes(1:2); % 'Fast' uses HSV and Lab
+        simFunctionHandles = simFunctionHandles(1:2); % Two different merging strategies
+        ks = ks(1:2);
+      end
+      
+      idx = 1;
+      for j = 1:length(ks)
+        k = ks(j); % Segmentation threshold k
+        minSize = k; % We set minSize = k
+        for n = 1:length(colorTypes)
+          colorType = colorTypes{n};
+          [boxesT{idx} blobIndIm blobBoxes hierarchy priorityT{idx}] = ...
+            Image2HierarchicalGrouping(im, sigma, k, minSize, colorType, simFunctionHandles);
+          idx = idx + 1;
+        end
+      end
+      boxes = cat(1, boxesT{:}); % Concatenate boxes from all hierarchies
+      priority = cat(1, priorityT{:}); % Concatenate priorities
+      
+      % Do pseudo random sorting as in paper
+      priority = priority .* rand(size(priority));
+      [priority sortIds] = sort(priority, 'ascend');
+      boxes = boxes(sortIds,:);
+      
+      boxes = FilterBoxesWidth(boxes, minBoxWidth);
+      boxes = BoxRemoveDuplicates(boxes);
+      
+      if scale ~= 1
+        boxes = (boxes - 1) * scale + 1;
+      end
+* R-CNN finetune model prototxt file ( CAFFE )
+      input: "data"
+      input_dim: 10
+      input_dim: 3
+      input_dim: 227
+      input_dim: 227
+      layers {
+        bottom: "data"
+        top: "conv1"
+        name: "conv1"
+        type: CONVOLUTION
+        blobs_lr: 1
+        blobs_lr: 2
+        weight_decay: 1
+        weight_decay: 0
+        convolution_param {
+          num_output: 96
+          kernel_size: 11
+          stride: 4
+          weight_filler {
+            type: "gaussian"
+            std: 0.01
+          }
+          bias_filler {
+            type: "constant"
+            value: 0
+          }
+        }
+      }
+      layers {
+        bottom: "conv1"
+        top: "conv1"
+        name: "relu1"
+        type: RELU
+      }
+      layers {
+        bottom: "conv1"
+        top: "pool1"
+        name: "pool1"
+        type: POOLING
+        pooling_param {
+          pool: MAX
+          kernel_size: 3
+          stride: 2
+        }
+      }
+      layers {
+        bottom: "pool1"
+        top: "norm1"
+        name: "norm1"
+        type: LRN
+        lrn_param {
+          local_size: 5
+          alpha: 0.0001
+          beta: 0.75
+        }
+      }
+      layers {
+        bottom: "norm1"
+        top: "conv2"
+        name: "conv2"
+        type: CONVOLUTION
+        blobs_lr: 1
+        blobs_lr: 2
+        weight_decay: 1
+        weight_decay: 0
+        convolution_param {
+          num_output: 256
+          pad: 2
+          kernel_size: 5
+          group: 2
+          weight_filler {
+            type: "gaussian"
+            std: 0.01
+          }
+          bias_filler {
+            type: "constant"
+            value: 1
+          }
+        }
+      }
+      layers {
+        bottom: "conv2"
+        top: "conv2"
+        name: "relu2"
+        type: RELU
+      }
+      layers {
+        bottom: "conv2"
+        top: "pool2"
+        name: "pool2"
+        type: POOLING
+        pooling_param {
+          pool: MAX
+          kernel_size: 3
+          stride: 2
+        }
+      }
+      layers {
+        bottom: "pool2"
+        top: "norm2"
+        name: "norm2"
+        type: LRN
+        lrn_param {
+          local_size: 5
+          alpha: 0.0001
+          beta: 0.75
+        }
+      }
+      layers {
+        bottom: "norm2"
+        top: "conv3"
+        name: "conv3"
+        type: CONVOLUTION
+        blobs_lr: 1
+        blobs_lr: 2
+        weight_decay: 1
+        weight_decay: 0
+        convolution_param {
+          num_output: 384
+          pad: 1
+          kernel_size: 3
+          weight_filler {
+            type: "gaussian"
+            std: 0.01
+          }
+          bias_filler {
+            type: "constant"
+            value: 0
+          }
+        }
+      }
+      layers {
+        bottom: "conv3"
+        top: "conv3"
+        name: "relu3"
+        type: RELU
+      }
+      layers {
+        bottom: "conv3"
+        top: "conv4"
+        name: "conv4"
+        type: CONVOLUTION
+        blobs_lr: 1
+        blobs_lr: 2
+        weight_decay: 1
+        weight_decay: 0
+        convolution_param {
+          num_output: 384
+          pad: 1
+          kernel_size: 3
+          group: 2
+          weight_filler {
+            type: "gaussian"
+            std: 0.01
+          }
+          bias_filler {
+            type: "constant"
+            value: 1
+          }
+        }
+      }
+      layers {
+        bottom: "conv4"
+        top: "conv4"
+        name: "relu4"
+        type: RELU
+      }
+      layers {
+        bottom: "conv4"
+        top: "conv5"
+        name: "conv5"
+        type: CONVOLUTION
+        blobs_lr: 1
+        blobs_lr: 2
+        weight_decay: 1
+        weight_decay: 0
+        convolution_param {
+          num_output: 256
+          pad: 1
+          kernel_size: 3
+          group: 2
+          weight_filler {
+            type: "gaussian"
+            std: 0.01
+          }
+          bias_filler {
+            type: "constant"
+            value: 1
+          }
+        }
+      }
+      layers {
+        bottom: "conv5"
+        top: "conv5"
+        name: "relu5"
+        type: RELU
+      }
+      layers {
+        bottom: "conv5"
+        top: "pool5"
+        name: "pool5"
+        type: POOLING
+        pooling_param {
+          pool: MAX
+          kernel_size: 3
+          stride: 2
+        }
+      }
+      layers {
+        bottom: "pool5"
+        top: "fc6"
+        name: "fc6"
+        type: INNER_PRODUCT
+        blobs_lr: 1
+        blobs_lr: 2
+        weight_decay: 1
+        weight_decay: 0
+        inner_product_param {
+          num_output: 4096
+          weight_filler {
+            type: "gaussian"
+            std: 0.005
+          }
+          bias_filler {
+            type: "constant"
+            value: 1
+          }
+        }
+      }
+      layers {
+        bottom: "fc6"
+        top: "fc6"
+        name: "relu6"
+        type: RELU
+      }
+      layers {
+        bottom: "fc6"
+        top: "fc6"
+        name: "drop6"
+        type: DROPOUT
+        dropout_param {
+          dropout_ratio: 0.5
+        }
+      }
+      layers {
+        bottom: "fc6"
+        top: "fc7"
+        name: "fc7"
+        type: INNER_PRODUCT
+        blobs_lr: 1
+        blobs_lr: 2
+        weight_decay: 1
+        weight_decay: 0
+        inner_product_param {
+          num_output: 4096
+          weight_filler {
+            type: "gaussian"
+            std: 0.005
+          }
+          bias_filler {
+            type: "constant"
+            value: 1
+          }
+        }
+      }
+      layers {
+        bottom: "fc7"
+        top: "fc7"
+        name: "relu7"
+        type: RELU
+      }
+      layers {
+        bottom: "fc7"
+        top: "fc7"
+        name: "drop7"
+        type: DROPOUT
+        dropout_param {
+          dropout_ratio: 0.5
+        }
+      }
+      layers {
+        bottom: "fc7"
+        top: "fc8_pascal"
+        name: "fc8_pascal"
+        type: INNER_PRODUCT
+        blobs_lr: 1
+        blobs_lr: 2
+        weight_decay: 1
+        weight_decay: 0
+        inner_product_param {
+          num_output: 21
+          weight_filler {
+            type: "gaussian"
+            std: 0.01
+          }
+          bias_filler {
+            type: "constant"
+            value: 0
+          }
+        }
+      }
+      layers {
+        bottom: "fc8_pascal"
+        top: "prob"
+        name: "prob"
+        type: SOFTMAX
+      }
+
+# 参考文献
+* Rich feature hierarchies for accurate object detection and semantic segmentation, Ross Girshick, 2014.
+* https://github.com/rbgirshick/rcnn. 
