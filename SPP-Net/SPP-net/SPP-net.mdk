@@ -51,9 +51,8 @@ Logo          : True
 # SPP在Caffe中的实现
 
 --------------------------layer spm------------------------
-'''
-layers {
- layer {
+
+layer {
    name: "pool5_spm6"
    type: "pool"
    pool_param{
@@ -61,20 +60,18 @@ layers {
 		stride: 2
 		pool: MAX
    }
- }
  bottom: "conv5"
  top: "pool5_spm6"
 }
-layers {
- layer {
+
+layer {
    name: "pool5_spm6_flatten"
    type: "flatten"
- }
- bottom: "pool5_spm6"
- top: "pool5_spm6_flatten"
+   bottom: "pool5_spm6"
+   top: "pool5_spm6_flatten"
 }
-layers {
- layer {
+
+layer {
    name: "pool5_spm3"
    type: "pool"
    pool_param{
@@ -82,20 +79,18 @@ layers {
 		stride: 4
 		pool: MAX
    }
- }
- bottom: "conv5"
- top: "pool5_spm3"
+   bottom: "conv5"
+   top: "pool5_spm3"
 }
-layers {
- layer {
+
+layer {
    name: "pool5_spm3_flatten"
    type: "flatten"
- }
- bottom: "pool5_spm3"
- top: "pool5_spm3_flatten"
+   bottom: "pool5_spm3"
+   top: "pool5_spm3_flatten"
 }
-layers {
- layer {
+
+layer {
    name: "pool5_spm2"
    type: "pool"
    pool_param{
@@ -103,20 +98,18 @@ layers {
 		stride: 7
 		pool: MAX
    }
- }
- bottom: "conv5"
- top: "pool5_spm2"
+   bottom: "conv5"
+   top: "pool5_spm2"
 }
-layers {
- layer {
+
+layer {
    name: "pool5_spm2_flatten"
    type: "flatten"
- }
- bottom: "pool5_spm2"
- top: "pool5_spm2_flatten"
+   bottom: "pool5_spm2"
+   top: "pool5_spm2_flatten"
 }
-layers {
- layer {
+
+layer {
    name: "pool5_spm1"
    type: "pool"
    pool_param{
@@ -124,33 +117,30 @@ layers {
 		stride: 13
 		pool: MAX
    }
- }
- bottom: "conv5"
- top: "pool5_spm1"
+   bottom: "conv5"
+   top: "pool5_spm1"
 }
-layers {
- layer {
+
+layer {
    name: "pool5_spm1_flatten"
    type: "flatten"
- }
- bottom: "pool5_spm1"
- top: "pool5_spm1_flatten"
+   bottom: "pool5_spm1"
+   top: "pool5_spm1_flatten"
 }
-layers {
- layer {
+
+layer {
    name: "pool5_spm"
    type: "concat"
    concat_param{
 		concat_dim: 1
    }
- }
- bottom: "pool5_spm1_flatten"
- bottom: "pool5_spm2_flatten"
- bottom: "pool5_spm3_flatten"
- bottom: "pool5_spm6_flatten"
- top: "pool5_spm"
+   bottom: "pool5_spm1_flatten"
+   bottom: "pool5_spm2_flatten"
+   bottom: "pool5_spm3_flatten"
+   bottom: "pool5_spm6_flatten"
+   top: "pool5_spm"
 }
-'''
+
 # 参考文献
 * SPP_net: spatial pyramid pooling in deep convolutional networks for visual recognition, Kaiming-He, 2014
 * https://github.com/ShaoqingRen/SPP_net
