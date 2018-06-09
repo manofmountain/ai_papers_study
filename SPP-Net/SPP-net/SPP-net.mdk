@@ -16,7 +16,41 @@ Logo          : True
 
 [CNN网络使用SPP层前后对输入图片所进行的处理]: images/CNN-SPP-.JPG "CNN网络使用SPP层前后对输入图片所进行的处理" { width:auto; max-width:90% }
 
-# 
+# 金字塔式池化层（Spatial Pyramid Pooling）
+
+如以上介绍本质上金字塔式池化层也是一种池化层结构，只是它被巧妙的设计用来处理任意维度的输入Tensor，这样最终经过此层处理后，我们能够得到固定长度的结果向量。下图中我们能清晰地看到它是如何实现的。
+
+![带有金字塔式池化层的CNN网络]
+
+[带有金字塔式池化层的CNN网络]: images/-CNN-.JPG "带有金字塔式池化层的CNN网络" { width:auto; max-width:90% }
+
+# 训练带有金字塔式池化层的CNN网络
+
+理论上有了金字塔式池化层后，我们训练CNN网络模型将可以使用做任意大小（Size）的图片数据了。可因为当下像Caffe / Tensorflow等流行深度学习框架在设计之初都对固定大小的输入图片有假设，因此它们处理起来固定大小输入的模型训练更加友好。作者也先尝试使用了固定大小的输入图片来进行训练。但为了发挥其能使用多种大小图片进行模型训练的优势，他们使用迁移学习或者说多阶段学习的办法来进行模型训练。即使用180x180与224x224大小的图片交叉着训练CNN网络。。最终得到了与只使用单一大小图片输入一致的收敛速率。
+
+# SPP层在CNN检测网络中的应用
+
+根据我们上篇对R-CNN网络的了解可以知道，我们的前端CNN网络需要对不同大小的ROI窗口进行特征提取。而为了保证最终得到一样大小的特征向量（因为接下来的SVM分类器与要对目标框进行位置较正的逻辑回归模型都需要固定大小的输入），我们一般会将原本具有不同大小的ROI强制转换为固定的大小（如180x180或224x224），如此以来可能会对ROI的输入对比度等造成破化，极有可能因此而影响我们分类器对正确物体的特征认识。
+若将SPP层来代替普通的MaxPool或AvgPool层来使用，则可完美地解决输入的ROI窗口大小不一致的问题，从而有可能提高我们CNN模型+SVM 目标检测框架的准确性。下图中可看出SPP层是如何应用在此CNN网络+SVM分类模型的目标检测框架中的。
+
+![SPP层在目标检测框架中的应用]
+
+[SPP层在目标检测框架中的应用]: images/SPP-.JPG "SPP层在目标检测框架中的应用" { width:auto; max-width:90% }
+
+# SPP层对CNN检测网络带来的好处
+
+以下表格中可看到SPP层的使用所能给我们的R-CNN检测框架带来的模型准确率与速度上的好处。
+
+![SPP层的使用对R-CNN检测框架带来的提升]
+
+[SPP层的使用对R-CNN检测框架带来的提升]: images/SPP-R-CNN-.JPG "SPP层的使用对R-CNN检测框架带来的提升" { width:auto; max-width:90% }
+
+* SPP层的使用可以让我们使用整幅图片作用前端CNN网络的输入，在最后的CNN层输出中，我们再提取出不同ROI窗口所对应的特征向量。这样以来，因为平均一幅图上面约有2000个ROI窗口，因此向对于普通R-CNN检测框架，我们能够省2000倍的计算量；
+* 为了增加模型检测的精度，作者有使用不同scale的输入图片来提取ROI的特征，这样使用一种类似于特征的组合的模式提高接下来的SVM分类模型的准确率。
+
+# 参考文献
+* SPP_net: spatial pyramid pooling in deep convolutional networks for visual recognition, Kaiming-He, 2014
+* https://github.com/ShaoqingRen/SPP_net
 
 * Read the [reference manual].
 * Explore the upper-right toolbox menu to discover how Markdown works. 
