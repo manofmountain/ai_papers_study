@@ -51,11 +51,3 @@ Logo          : True
 # 参考文献
 * SPP_net: spatial pyramid pooling in deep convolutional networks for visual recognition, Kaiming-He, 2014
 * https://github.com/ShaoqingRen/SPP_net
-
-* Read the [reference manual].
-* Explore the upper-right toolbox menu to discover how Markdown works. 
-* `Alt-Q` reformats the current paragraph.
-
-Enjoy!
-
-[reference manual]: http://research.microsoft.com/en-us/um/people/daan/madoko/doc/reference.html  "Madoko reference manual"
