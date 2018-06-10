@@ -31,7 +31,112 @@ Logo          : True
 
 * ROI池化层： ROI层的引入本质上是Fast_R-CNN对SPP-Net里面idea的最大借鉴；ROI池化层有两个参数H，W，分别表示此池化层处理后最终能得到的feature map的高与宽；任意一个ROI特征（经过之间的CNN网络处理后）都可以视为一个（r,c,h,w）的四元组，其中（r,c）表示区域左上角的位置，（h,w）则为此区域的高宽大小；ROI层在对这么一个ROI特征四元组进行处理时，会先将其分别H x W个网格单元，每个单元的大小为h/H x w/W，然后分别对每个单元做MaxPool处理以得到一个极大值，这样最终就能得到一个大小为H x W的特征输出。就此我们容易看出本质上ROI层是只有一个空间池化级别的金字塔式空间池化层。
 * 前端CNN网络的初始化：任意一个CNN分类网络都可作为它的前端CNN网络；不过对用于分类的CNN网络我们需要进行一些变行以来满足Fast_R-CNN需求，首先需要将最后一个MaxPool层替换为ROI层以来输出与接下来FC层输入大小相匹配的feature maps；另外则需要将CNN分类网络最后端的FC层（如对于Imagenet相关的CNN网络即其最后的1000维输入的FC层）替换为两个兄弟层，一个为用于分类的Softmax层，另一个则用于区域位置检测的回归层，一般为L1回归；最后整个CNN网络的输入需要由两部分组成，分别为输入图片数据与对应的ROI区域位置提案。
+* Fast_R-CNN的训练损失函数：如下所示，可以知道它共有两个部分构成，分别对应两个层的输出（Softmax层与L1回归层）；
+L(P, U, Tu, V) = Lcls(P, U) + λ[U ≥ 1]Lloc(Tu, V), 其中Lcls(P, U) = − log Pu是ROI计算得到的相对于正确类别U的交叉熵损失；而Lloc 则是此ROI最终调整过后得到的目标区域与正确目标区域之间的L1损失。
 
+# Fast_R-CNN检测模型部署
+一旦我们训练出了正确的Fast_R-CNN模型，那么可按以下步骤来进行模型部署。
+* 以一张图片及其上的R个目标提案作为输入；(R一般为2000左右)
+* 一个前向运算后我们能得出每个ROI所对应的类别分布与相应的目标位置框的位置偏移（相对于输入的RoI窗口位置）；
+* 接下来可使用与R—CNN类似的NMS（非最大值抑制）方法来减少预测得到的目标检测框的数目，最终得到的类别及框位置即为此图片所检测得到的类别与框。
 
+# 实验得到的发现
+* 作者通过实验证实通过多目标学习来一起学习目标类别与位置相对于像之前R-CNN或SPP-Net那样对目标类别与位置分别进行学习相比，多目标学习可取得更好的mAP值；
+* 较深的网络在进行图片特征学习时会自动地学会图片大小无关的特征提取方法；因此作者认为在使用像VGG16这样较深的网络时，只使用单一缩放图片数据集进行模型训练在时间与精度权衡上效果更好。
 
+# Fast_R-CNN Caffe代码
+
+本质上它相对于SPP-Net的主要改进在于将原来R-CNN框架下分为三个阶段去做的事情整合为一个阶段，反映在caffe model 上面即是最终的loss层实现了多目标损失函数学习。另外因为ROI层也是SPP层的一个特例，因此我们也放在这里。
+
+---------------ROI层-----------------------
+'''
+layer {
+  name: "roi_pool5"
+  type: "ROIPooling"
+  bottom: "conv5"
+  bottom: "rois"
+  top: "pool5"
+  roi_pooling_param {
+    pooled_w: 6
+    pooled_h: 6
+    spatial_scale: 0.0625 # 1/16
+  }
+}
+'''
+
+---------------最后几层的损失函数层----------------------
+'''
+layer {
+  name: "cls_score"
+  type: "InnerProduct"
+  bottom: "fc7"
+  top: "cls_score"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  inner_product_param {
+    num_output: 21
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+}
+layer {
+  name: "bbox_pred"
+  type: "InnerProduct"
+  bottom: "fc7"
+  top: "bbox_pred"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  inner_product_param {
+    num_output: 84
+    weight_filler {
+      type: "gaussian"
+      std: 0.001
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+}
+layer {
+  name: "loss_cls"
+  type: "SoftmaxWithLoss"
+  bottom: "cls_score"
+  bottom: "labels"
+  top: "loss_cls"
+  loss_weight: 1
+}
+layer {
+  name: "loss_bbox"
+  type: "SmoothL1Loss"
+  bottom: "bbox_pred"
+  bottom: "bbox_targets"
+  bottom: "bbox_loss_weights"
+  top: "loss_bbox"
+  loss_weight: 1
+}
+'''
+
+# 参考文献
+
+* Fast R-CNN, Ross Girshick, 2015
+* https://github.com/rbgirshick/fast-rcnn/
 
