@@ -7,16 +7,31 @@ Logo          : True
 # R-CNN的创始人Girshick（同样来自微软）对R-CNN与SPP-Net有了更多思考后，对这种需要多阶段进行训练的目标检测框架做了重大更新。使得整体的目标检测这一部分不再由多阶段来完成，而是统一使用一个CNN网络来完成特征提取，区域提案分类及后期对检测框的微调等三样工作。这个创新算是不小，相对于之间流程的复杂，简单后了的模型不只实现了训练与推理速度的提升，同时也带来了目标检测精度的增加。大牛水平就是高啊！往往能够通过将模型简单化来使得问题得到更好的解决。高山仰止！
 
 # R-CNN目标检测框架的缺点
-*  它的训练是多阶段的即我们在使用像Selective Search等方法获得图片的区域提案后，先使用这些提案作为输入来训练出一个收敛、精度还算可以的CNN网络；然后去掉此CNN网络最后的Softmax层/FC层后，直接使用网络最后的CNN层输出的feature maps作为一个SVM分类器的输入，对SVM分类器进行训练以识别出此区域提案可能的分类；最后第三个阶段同样是利用第一阶段训练得到的CNN前端网络拿到处理过的CNN层的feature maps，将之作为输入来训练一个逻辑回归模型以来对区域位置进行较正；多阶段训练本身就是复杂的，难操作的；
-* 
+*  它的训练是多阶段的：我们在使用像Selective Search等方法获得图片的区域提案后，先使用这些提案作为输入来训练出一个收敛、精度还算可以的CNN网络；然后去掉此CNN网络最后的Softmax层/FC层后，直接使用网络最后的CNN层输出的feature maps作为一个SVM分类器的输入，对SVM分类器进行训练以识别出此区域提案可能的分类；最后第三个阶段同样是利用第一阶段训练得到的CNN前端网络拿到处理过的CNN层的feature maps，将之作为输入来训练一个逻辑回归模型以来对区域位置进行较正；多阶段训练本身就是复杂的，难操作的；
+* 训练时的空间与时间复杂度高：训练第二、三阶段所用的SVM与逻辑回归分类器都需要将图片区域提案通过第一阶段训练得到的CNN网络以生成相应的特征向量；一般这些特征向量都会存储在硬盘当中；对于VGG16的前端CNN网络，一般需要2.5天的GPU时间来处理5000张VOC07 图片，而这些图片产生的特征向量则需要数百GB的硬盘空间来存储；
+* 对象检测慢：因为R-CNN网络需要对每个图片之上的每一个区域提案进行三阶段处理，因此需要的时间极长，当使用VGG16网络时一般需要47秒来处理一副图片。
 
-Madoko is a fast markdown processor for writing professional articles
-with a focus on simplicity and plain text readability.
+# SPP-Net应用在目标检测框架上的缺点
+* 它的训练同样是多阶段的，所以与前面章节所说的R-CNN有着类似的缺点；
+* 由于SPP层的引入，它可以对整张图直接计算，以节省同张图上面多个区域提案在前端网络计算上所需的时，但在使用finetue方式进行训练模型增强时只对SPP层之后的FC层进行finetune，因此整体模型的准确度会受些影响。
 
-* Read the [reference manual].
-* Explore the upper-right toolbox menu to discover how Markdown works. 
-* `Alt-Q` reformats the current paragraph.
+# Fast_R-CNN带来的改进
+* 它在多个数据集上取得了比R-CNN与SPP-Net更高的mAP准确率；
+* 使用单个阶段完成目标区域检测；（可以说是最本质的创新）
+* 训练时对所有的层进行同步更新；
+* 因为是单阶段训练所以不需要额外的硬盘空间来存储中间特征。
 
-Enjoy!
+# Fast_R-CNN网络结构
 
-[reference manual]: http://research.microsoft.com/en-us/um/people/daan/madoko/doc/reference.html  "Madoko reference manual"
+下图所示为Fast_R-CNN的基本网络结构，同过跟上篇的SPP-Net的网络结构对比，我们能够发现它结构最本质的创新即在于直接将最后FC层后得到的特征向量分别使用Softmax层与Regressor层来直接对区域方案的类别与位置进行预测与调整，这一网络结构改进后来也为其它的模型像Yolo系列与SSD所采用。
+
+![Fast_R-CNN网络结构]
+
+[Fast_R-CNN网络结构]: images/Fast_R-CNN-.JPG "Fast_R-CNN网络结构" { width:auto; max-width:90% }
+
+* ROI池化层： ROI层的引入本质上是Fast_R-CNN对SPP-Net里面idea的最大借鉴；ROI池化层有两个参数H，W，分别表示此池化层处理后最终能得到的feature map的高与宽；任意一个ROI特征（经过之间的CNN网络处理后）都可以视为一个（r,c,h,w）的四元组，其中（r,c）表示区域左上角的位置，（h,w）则为此区域的高宽大小；ROI层在对这么一个ROI特征四元组进行处理时，会先将其分别H x W个网格单元，每个单元的大小为h/H x w/W，然后分别对每个单元做MaxPool处理以得到一个极大值，这样最终就能得到一个大小为H x W的特征输出。就此我们容易看出本质上ROI层是只有一个空间池化级别的金字塔式空间池化层。
+* 前端CNN网络的初始化：任意一个CNN分类网络都可作为它的前端CNN网络；不过对用于分类的CNN网络我们需要进行一些变行以来满足Fast_R-CNN需求，首先需要将最后一个MaxPool层替换为ROI层以来输出与接下来FC层输入大小相匹配的feature maps；另外则需要将CNN分类网络最后端的FC层（如对于Imagenet相关的CNN网络即其最后的1000维输入的FC层）替换为两个兄弟层，一个为用于分类的Softmax层，另一个则用于区域位置检测的回归层，一般为L1回归；最后整个CNN网络的输入需要由两部分组成，分别为输入图片数据与对应的ROI区域位置提案。
+
+
+
+
