@@ -13,10 +13,43 @@ Logo          : True
 
 如下图示即为Faster_R-CNN的基础网络架构。有了上一篇Faster_R-CNN的基础，我们能很容易看出本身Faster_R-CNN = Fast_R-CNN +　RPN。
 
+![Faster_R-CNN基本网络结构]
 
-* Explore the upper-right toolbox menu to discover how Markdown works. 
-* `Alt-Q` reformats the current paragraph.
+[Faster_R-CNN基本网络结构]: images/Faster_R-CNN-.JPG "Faster_R-CNN基本网络结构" { width:auto; max-width:90% }
 
-Enjoy!
+# RPN
 
-[reference manual]: http://research.microsoft.com/en-us/um/people/daan/madoko/doc/reference.html  "Madoko reference manual"
+本质上RPN的提出即为Faster_R-CNN的最大亮点，因此我们也重点对其进行分析。
+从以上Faster_R-CNN基本网络架构图中我们能够看出，此时网络的输入只有图片，而不再有像之前由Selective Search等方法所提供的相对应图片的区域提案。同时，我们看到在前端用于特征提取的CNN主杆网络之后有了两个分支。其中一条像Fast_R—CNN一样作为ROI pool的直接输入；另外一条则喂给了本论文中新提出的RPN网络，用于区域提案的自动学习，并将学习出的区域提案再作为ROI pool的另外一个输入从而使期完成后续的分类loss与位置回归loss等计算。
+下面大致介绍下RPN网络所引入的几个基本概念。
+* Anchor box
+在R-CNN系列目标检测网络中，我们容易知道图片预先所提供的提案对其最终位置检测的准确率有极大的影响。很多CNN目标检测方法都努力提供具有不同scale / size大小的区域提案以最大范围地检测到任意scale / size的目标及其位置。为了达到这一目的，通常有两种方法。一种是使用不同大小的图片作为CNN检测网络的输入（通过Resize获得不同大小的图片，同样一张图片需要resize成不同的size后喂入多次，后须size的图片则是对正在训练的模型进行finetune）；另一种则是在使用CNN进行特征提取时选用不同大小的filter size（比如经典的Network In network中所提出的概念或者典型的Inception系列分类网络）。而在本文中作者提出了使用Anchor box的方法来对输入feature map之中的任一点学习出不同大小/分辨率检测框的方法来。以下图中可以看出三种方法的对比与区别。
+
+![三种用于不同scale大小目标检测的方法原理]
+
+[三种用于不同scale大小目标检测的方法原理]: images/-scale-.JPG "三种用于不同scale大小目标检测的方法原理" { width:auto; max-width:90% }
+
+从上图中可以看出第一种方法需要每个图片分别变形（resize）为三种不同的大小来进行模型训练，而第二种方法则要求对于CNN层所生出的feature map之上的任一点用不同大小的filter去进一步处理（相对单纯的CNN结构如VGG系列等而言略显复杂），而第三种使用anchor box的方法则通过对CNN输出的feature map之上的任一点进行单一filter size(nxn)的处理，最终分别生成不同scale / aspect ratio的区域提案及其包含潜在检测目标的概率大小，而它还只需要对单一scale的图片与feature map进行处理，因此优势较大。
+在下图中我们能看出Anchor box的具体实现机制及其应用效果。
+
+
+![Anchor_box的具体实现及应用]
+
+[Anchor_box的具体实现及应用]: images/Anchor_box-.JPG "Anchor_box的具体实现及应用" { width:auto; max-width:90% }
+
+作者在论文中对CNN特征提取网络最后生成的feature map上的每一点使用了9个相应的anchor box（其分别具有不同的大小与分辨率）。上图中的intermediate layer本质上分别由一层3x3 Conv层与1x1 Conv层所组成。即我们对最后的feature maps通过一个256x3x3的CNN层生成了具有256维的新的feature maps。然后再在其上分别使用1x1的网络进行特征融合，最终再分别通过Reg层及cls层就得到了9个anchor box分别所对应的predict box的中心位置/大小及其是否包含有目标的概率大小（objectness）等。
+
+* RPN loss函数的计算
+
+与Fast_R-CNN中介绍过的loss函数类似，RPN网络的loss函数也包含分类loss与位置回归loss两个部分。如下所示。
+
+![RPN_loss_函数计算定义]
+
+[RPN_loss_函数计算定义]: images/RPN_loss_-.JPG "RPN_loss_函数计算定义" { width:auto; max-width:90% }
+其中i表示一个mini-batch中的anchor box的index，Pi为anchor i中包含某目标的概率大小，Pi*则为anchor i是否确实包含目标的标识，如果包含某一groud truth box则其为1，否则为0。Ti是anchor i中表示其位置的四个参量（分别为Xi,Yi,Hi,Wi），Ti*则为所对应的groud truth box的位置参量组合（也为四个，分别是Xi*,Yi*,Hi*,Wi*）。对于每个位置参量，参用经典的回归方式对其进行计算，如下所示。
+
+![bounding_box位置参量回归计算]
+
+[bounding_box位置参量回归计算]: images/bounding_box-.JPG "bounding_box位置参量回归计算" { width:auto; max-width:90% }
+
+* RPN训练
