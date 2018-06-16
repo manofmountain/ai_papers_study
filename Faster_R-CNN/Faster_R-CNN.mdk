@@ -1,0 +1,22 @@
+Title         : Faster_R-CNN
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍 
+
+还是微软研究院里Sun, Jian老师团队里的成员像Ren, Shaoqing/He, Kaiming等跟当时同为微软研究院里的Ross，Girshick一块合作进一步将R-CNN系列的模型升级，最终形成了近乎为当代具有最好准确率的模型Faster_R-CNN。本质上它是相对于Fast_R-CNN的进一步升级。通过RPN（Region Proposal Network）的应用解决了Fast_R-CNN当中对像Selective Search等传统意义上的特征区域提案（Region Proposal）方法的需求，从而进一步使得模型检测速度与准度都有了较大的提高。
+可以直接认为Faster_R-CNN = RPN + Fast_R-CNN。而因为RPN相对于像Selective Search等传统区域提案算法可以与Fast_R-CNN主检测网络共享基础网络特征，因此能够大大地提高区域提案计算效能，所以直接将Fast_R-CNN升级到了Faster_R-CNN。它也是目前为止R-CNN系列图片位置检测网络中最先进、最为流行的一种网络。
+
+* Faster_R-CNN的基础架构
+
+如下图示即为Faster_R-CNN的基础网络架构。有了上一篇Faster_R-CNN的基础，我们能很容易看出本身Faster_R-CNN = Fast_R-CNN +　RPN。
+
+
+* Explore the upper-right toolbox menu to discover how Markdown works. 
+* `Alt-Q` reformats the current paragraph.
+
+Enjoy!
+
+[reference manual]: http://research.microsoft.com/en-us/um/people/daan/madoko/doc/reference.html  "Madoko reference manual"
