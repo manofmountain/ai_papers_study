@@ -61,4 +61,23 @@ Logo          : True
 
 对于加入了RPN后而形成的Faster_R-CNN网络结构的训练，作者提供了三种可行的方案。其中第一种方案是他们实验下来效果最好的，论文中所有实验数据全是来自于此种方案。
 
-* 交叉式训练：即首先训练出RPN网络来，然后使用它生成的图片区域提案再训练Fast_R-CNN目标检测网络，接下来再
+* 交叉式训练：即首先训练出RPN网络来；然后使用它生成的图片区域提案再训练Fast_R-CNN目标检测网络；接下来再使用此步骤生成的权重初始化整个Faster_R-CNN网络来finetune RPN的部分；最终再使用上步骤生成的权重初始化整个Faster_R-CNN，然后固定RPN网络部分的权重不变化，finetune Fast_R-CNN部分ROI之后的层，最终就得到了训练好了的Faster_R-CNN模型。
+
+* 近似联合训练：此种方法用于Faster_R-CNN模型训练时，并不向上个方法那样分阶段进行，而是在SGD的一个fwd/bwd 迭代步骤中同时训练RPN与Fast_R-CNN两个网络部分；相当于它有四个loss（RPN与Fast_R-CNN各两个），然后基于四个loss分别向后做backward。然后在前端CNN网络的最后一层backward时，它会对分别来自于RPN与Fast_R-CNN的参数梯度进行加总以作为它输出的梯度向后进行backward计算。在这整个过程中，我们忽略了由Fast_R-CNN对RPN所输出的区域提案的backward，所以称此方法为近似联合训练。作者在文章中指出此方法能够得到与上述交叉式训练方法近似的精度，同时还能使减少约25%-50%的模型训练时间。我们组在基于CPU的caffe框架上曾重现过它这一方法。
+
+* 联合训练：与上述方法不同，即考虑了Fast_R-CNN对RPN所输出区域提案的backward计算，这样更能反映偏微分编程模型本质。但因为自ROI pool之后对区域提案的backward的实现比较复杂，因此作者并未对此过多讨论。
+
+# Faster_R-CNN的精度与速度结果
+如下图示，容易看出它相对于之前SS + Fast_R-CNN的state of art方法，能够在精度与速度上都有较大提高。显然其最大的贡献在于RPN的提出与使用。
+
+
+
+# 部分代码
+
+
+
+# 参考文献
+
+* Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks, Ren-Shaoqing, 2016
+* https://github.com/shaoqingren/faster_rcnn
+* https://github.com/rbgirshick/py-faster-rcnn
