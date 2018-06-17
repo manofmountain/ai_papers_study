@@ -24,14 +24,12 @@ Logo          : True
 下面大致介绍下RPN网络所引入的几个基本概念。
 * Anchor box
 在R-CNN系列目标检测网络中，我们容易知道图片预先所提供的提案对其最终位置检测的准确率有极大的影响。很多CNN目标检测方法都努力提供具有不同scale / size大小的区域提案以最大范围地检测到任意scale / size的目标及其位置。为了达到这一目的，通常有两种方法。一种是使用不同大小的图片作为CNN检测网络的输入（通过Resize获得不同大小的图片，同样一张图片需要resize成不同的size后喂入多次，后须size的图片则是对正在训练的模型进行finetune）；另一种则是在使用CNN进行特征提取时选用不同大小的filter size（比如经典的Network In network中所提出的概念或者典型的Inception系列分类网络）。而在本文中作者提出了使用Anchor box的方法来对输入feature map之中的任一点学习出不同大小/分辨率检测框的方法来。以下图中可以看出三种方法的对比与区别。
-
 ![三种用于不同scale大小目标检测的方法原理]
 
 [三种用于不同scale大小目标检测的方法原理]: images/-scale-.JPG "三种用于不同scale大小目标检测的方法原理" { width:auto; max-width:90% }
 
 从上图中可以看出第一种方法需要每个图片分别变形（resize）为三种不同的大小来进行模型训练，而第二种方法则要求对于CNN层所生出的feature map之上的任一点用不同大小的filter去进一步处理（相对单纯的CNN结构如VGG系列等而言略显复杂），而第三种使用anchor box的方法则通过对CNN输出的feature map之上的任一点进行单一filter size(nxn)的处理，最终分别生成不同scale / aspect ratio的区域提案及其包含潜在检测目标的概率大小，而它还只需要对单一scale的图片与feature map进行处理，因此优势较大。
 在下图中我们能看出Anchor box的具体实现机制及其应用效果。
-
 
 ![Anchor_box的具体实现及应用]
 
@@ -71,12 +69,11 @@ Logo          : True
 如下图示，容易看出它相对于之前SS + Fast_R-CNN的state of art方法，能够在精度与速度上都有较大提高。显然其最大的贡献在于RPN的提出与使用。
 
 
-
 # 部分代码
 
 ------------Data layer-----------------
 
-//我们可以看出Faster_R-CNN的data layer中已经不再有ROI提供了，这里的im_info则会提供一些输入图片信息像图片大小、分辨率啥的.
+**我们可以看出Faster_R-CNN的data layer中已经不再有ROI提供了，这里的im_info则会提供一些输入图片信息像图片大小、分辨率啥的.**
 
 layer {
   name: 'input-data'
@@ -93,7 +90,7 @@ layer {
 
 --------------RPN layers--------------------
 
-//如下可以看到对于CNN特征提取层的最后一层feature map输出'conv5_3'，先对其通过一个512 x 3 x 3的conv 处理，生成中间的512维的feature maps。
+**如下可以看到对于CNN特征提取层的最后一层feature map输出'conv5_3'，先对其通过一个512 x 3 x 3的conv 处理，生成中间的512维的feature maps.**
 
 layer {
   name: "rpn_conv/3x3"
@@ -116,7 +113,7 @@ layer {
   top: "rpn/output"
 }
 
-//此层用来得到每个feature map点上的9个anchor box是否包含有检测目标的概率分布
+**此层用来得到每个feature map点上的9个anchor box是否包含有检测目标的概率分布.**
 
 layer {
   name: "rpn_cls_score"
@@ -133,7 +130,7 @@ layer {
   }
 }
 
-//此层则是用来得到每个feature map点上的9个predict box的位置/大小
+**此层则是用来得到每个feature map点上的9个predict box的位置/大小.**
 
 layer {
   name: "rpn_bbox_pred"
@@ -158,7 +155,7 @@ layer {
    reshape_param { shape { dim: 0 dim: 2 dim: -1 dim: 0 } }
 }
 
-//中间处理，得到rpn每个区域提案之上的每个predict box与ground box之间的重合关系，用于进一步整理出潜在的positive & negative predict box来用于后面localization loss的计算。
+**中间处理，得到rpn每个区域提案之上的每个predict box与ground box之间的重合关系，用于进一步整理出潜在的positive & negative predict box来用于后面localization loss的计算.**
 
 layer {
   name: 'rpn-data'
@@ -178,7 +175,7 @@ layer {
   }
 }
 
-//计算classification loss
+**计算classification loss.**
 
 layer {
   name: "rpn_loss_cls"
@@ -196,7 +193,7 @@ layer {
 }
 
 
-//计算localization loss
+**计算localization loss.**
 
 layer {
   name: "rpn_loss_bbox"
@@ -212,7 +209,7 @@ layer {
 
 -------------------------------RoI Proposal---------------------------------------
 
-//以下几层layers则具体使用RPN输出的值结合data layer输出的raw image生成最终的ROI提案，此提案接下来将由Fast_R-CNN部分使用。
+**以下几层layers则具体使用RPN输出的值结合data layer输出的raw image生成最终的ROI提案，此提案接下来将由Fast_R-CNN部分使用.**
 
 layer {
   name: "rpn_cls_prob"
