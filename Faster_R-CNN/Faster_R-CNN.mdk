@@ -74,7 +74,191 @@ Logo          : True
 
 # 部分代码
 
+------------Data layer-----------------
 
+//我们可以看出Faster_R-CNN的data layer中已经不再有ROI提供了，这里的im_info则会提供一些输入图片信息像图片大小、分辨率啥的.
+
+layer {
+  name: 'input-data'
+  type: 'Python'
+  top: 'data'
+  top: 'im_info'
+  top: 'gt_boxes'
+  python_param {
+    module: 'roi_data_layer.layer'
+    layer: 'RoIDataLayer'
+    param_str: "'num_classes': 21"
+  }
+}
+
+--------------RPN layers--------------------
+
+//如下可以看到对于CNN特征提取层的最后一层feature map输出'conv5_3'，先对其通过一个512 x 3 x 3的conv 处理，生成中间的512维的feature maps。
+
+layer {
+  name: "rpn_conv/3x3"
+  type: "Convolution"
+  bottom: "conv5_3"
+  top: "rpn/output"
+  param { lr_mult: 1.0 }
+  param { lr_mult: 2.0 }
+  convolution_param {
+    num_output: 512
+    kernel_size: 3 pad: 1 stride: 1
+    weight_filler { type: "gaussian" std: 0.01 }
+    bias_filler { type: "constant" value: 0 }
+  }
+}
+layer {
+  name: "rpn_relu/3x3"
+  type: "ReLU"
+  bottom: "rpn/output"
+  top: "rpn/output"
+}
+
+//此层用来得到每个feature map点上的9个anchor box是否包含有检测目标的概率分布
+
+layer {
+  name: "rpn_cls_score"
+  type: "Convolution"
+  bottom: "rpn/output"
+  top: "rpn_cls_score"
+  param { lr_mult: 1.0 }
+  param { lr_mult: 2.0 }
+  convolution_param {
+    num_output: 18   # 2(bg/fg) * 9(anchors)
+    kernel_size: 1 pad: 0 stride: 1
+    weight_filler { type: "gaussian" std: 0.01 }
+    bias_filler { type: "constant" value: 0 }
+  }
+}
+
+//此层则是用来得到每个feature map点上的9个predict box的位置/大小
+
+layer {
+  name: "rpn_bbox_pred"
+  type: "Convolution"
+  bottom: "rpn/output"
+  top: "rpn_bbox_pred"
+  param { lr_mult: 1.0 }
+  param { lr_mult: 2.0 }
+  convolution_param {
+    num_output: 36   # 4 * 9(anchors)
+    kernel_size: 1 pad: 0 stride: 1
+    weight_filler { type: "gaussian" std: 0.01 }
+    bias_filler { type: "constant" value: 0 }
+  }
+}
+
+layer {
+   bottom: "rpn_cls_score"
+   top: "rpn_cls_score_reshape"
+   name: "rpn_cls_score_reshape"
+   type: "Reshape"
+   reshape_param { shape { dim: 0 dim: 2 dim: -1 dim: 0 } }
+}
+
+//中间处理，得到rpn每个区域提案之上的每个predict box与ground box之间的重合关系，用于进一步整理出潜在的positive & negative predict box来用于后面localization loss的计算。
+
+layer {
+  name: 'rpn-data'
+  type: 'Python'
+  bottom: 'rpn_cls_score'
+  bottom: 'gt_boxes'
+  bottom: 'im_info'
+  bottom: 'data'
+  top: 'rpn_labels'
+  top: 'rpn_bbox_targets'
+  top: 'rpn_bbox_inside_weights'
+  top: 'rpn_bbox_outside_weights'
+  python_param {
+    module: 'rpn.anchor_target_layer'
+    layer: 'AnchorTargetLayer'
+    param_str: "'feat_stride': 16"
+  }
+}
+
+//计算classification loss
+
+layer {
+  name: "rpn_loss_cls"
+  type: "SoftmaxWithLoss"
+  bottom: "rpn_cls_score_reshape"
+  bottom: "rpn_labels"
+  propagate_down: 1
+  propagate_down: 0
+  top: "rpn_cls_loss"
+  loss_weight: 1
+  loss_param {
+    ignore_label: -1
+    normalize: true
+  }
+}
+
+
+//计算localization loss
+
+layer {
+  name: "rpn_loss_bbox"
+  type: "SmoothL1Loss"
+  bottom: "rpn_bbox_pred"
+  bottom: "rpn_bbox_targets"
+  bottom: 'rpn_bbox_inside_weights'
+  bottom: 'rpn_bbox_outside_weights'
+  top: "rpn_loss_bbox"
+  loss_weight: 1
+  smooth_l1_loss_param { sigma: 3.0 }
+}
+
+-------------------------------RoI Proposal---------------------------------------
+
+//以下几层layers则具体使用RPN输出的值结合data layer输出的raw image生成最终的ROI提案，此提案接下来将由Fast_R-CNN部分使用。
+
+layer {
+  name: "rpn_cls_prob"
+  type: "Softmax"
+  bottom: "rpn_cls_score_reshape"
+  top: "rpn_cls_prob"
+}
+
+layer {
+  name: 'rpn_cls_prob_reshape'
+  type: 'Reshape'
+  bottom: 'rpn_cls_prob'
+  top: 'rpn_cls_prob_reshape'
+  reshape_param { shape { dim: 0 dim: 18 dim: -1 dim: 0 } }
+}
+
+layer {
+  name: 'proposal'
+  type: 'Python'
+  bottom: 'rpn_cls_prob_reshape'
+  bottom: 'rpn_bbox_pred'
+  bottom: 'im_info'
+  top: 'rpn_rois'
+  python_param {
+    module: 'rpn.proposal_layer'
+    layer: 'ProposalLayer'
+    param_str: "'feat_stride': 16"
+  }
+}
+
+layer {
+  name: 'roi-data'
+  type: 'Python'
+  bottom: 'rpn_rois'
+  bottom: 'gt_boxes'
+  top: 'rois'
+  top: 'labels'
+  top: 'bbox_targets'
+  top: 'bbox_inside_weights'
+  top: 'bbox_outside_weights'
+  python_param {
+    module: 'rpn.proposal_target_layer'
+    layer: 'ProposalTargetLayer'
+    param_str: "'num_classes': 21"
+  }
+}
 
 # 参考文献
 
