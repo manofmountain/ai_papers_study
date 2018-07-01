@@ -8,19 +8,45 @@ Logo          : True
 
 本来无意写FCN的，而是想耐心将R-CNN系列的文章梳理完全。只是在研究已分别在目标识别和实例分割领域成为state-of-art模型的R-FCN与Mask-RCNN网络时，发现它们都借鉴了这篇FCN的idea。于是想在这里先对它作一分析、介绍。
 
-它发在2015年的CVPR与PAMI上，由Berkley的学者来完成。是一篇在Semantic segmentation领域有着开山鼻祖地位的文章。
+FCN产生于2015年，当时随着Alexnet在Imagenet分类领域的巨大成功，Vgg, Googlenet相继提出，正是CNN网络在图片分类领域如火如荼，大肆发展的时期。此时R-CNN网络的作者首先试着将CNN用于目标识别领域当中并取得了较大的成功，于是机敏的各个计算机视觉领域研究人员都将目光转向了CNN。他们试图将CNN与自己所研究工作场景相结合，从而生出不一样的花火来。FCN的作者正是其中之一，它将在分类、目标识别领域混得很好的CNN网络稍作修改用来进行semantic segmentation工作，结果自然也很好，于是有了这样一篇文章。
+
+它最终发在CVPR上面，由Berkley的学者来完成。是一篇在Semantic segmentation领域有着开山鼻祖地位的文章。
 
 # 语义分割（Semantci segmentation）
 
-与目标识别（object detection）孜孜于找到图片中的物体位置，并使用框框将其标出不同，Semantic segmentation致力于在更细的粒度上对图片中的物体或有意义区域进行分割。它不像object detection那样只是用框将所识别的物体标识出来，而是在图像像素级别上对包含物体进行区分，从而实现更好的物体轮廓描述与分割。它与Object detection之间的不同可见于以下两副图中。
+与目标识别（object detection）孜孜于找到图片中的物体位置，并使用框框将其标出不同，Semantic segmentation致力于在更细的粒度上对图片中的物体或有意义区域进行分割。它不像object detection那样只是用框将所识别的物体标识出来，而是在图像像素级别上对包含物体进行区分，从而实现更好的物体轮廓描述与分割。它与Object detection之间的不同可见于以下图中。
 
+![objection_detection和semantic_segmentation之间的区别]
 
+[objection_detection和semantic_segmentation之间的区别]: images/objection_detection-semantic_segmentation-.JPG "objection_detection和semantic_segmentation之间的区别" { width:auto; max-width:90% }
 
-* Read the [reference manual].
-* Explore the upper-right toolbox menu to discover how Markdown works. 
-* `Alt-Q` reformats the current paragraph.
+# FCN的基本网络结构
+
+FCN主要用于解决semantic segmentation（即检测出图片上的每个pixel类别）问题。如下图是它的基本结构轮廓及网络输入、输出。
+
+![FCN应用场景]
+
+[FCN应用场景]: images/FCN-.JPG "FCN应用场景" { width:auto; max-width:90% }
+
+FCN相对用于图片分类领域的经典网络如Alexnet, VGG, Googlenet等只是在最后几层稍作了修改，替换，以让它们适用在了semantic segmentation上面。下图中可看出FCN相当于分类CNN网络在模型后端所有的变化。
+
+![FCN相对于分类CNN网络的变化]
+
+[FCN相对于分类CNN网络的变化]: images/FCN-CNN-.JPG "FCN相对于分类CNN网络的变化" { width:auto; max-width:90% }
+
+从上图中，我们可以看出在layer level上而言，FCN与分类CNN网络之间的主要不同在于模型的前端输入与后端输出处理上面。首先前端输入，一般CNN分类网络选择使用固定大小的image patch来作为输入，这个patch往往是从原图当中剪切出来的；而FCN网络则使用整张原图来作为输入。然后在模型的后端，CNN分类网络会使用FC层对最后的CNN层生成出的feature map进行处理，从而丢掉由前端CNN各层处理所一直暗暗保存着的图片上敏感区域的位置信息，进而只抽象表达出它的类别信息来，以用于后面的softmax等层来最终预测出它的类别概率分布；FCN则不同，它丢掉了CNN分类网络后端的FC层，进而保留了图片上的区域位置信息，可在其后加上几层CNN来进一步分析处理，整合，最终生成出有着C+1（以为目标类别数，+1是为了考虑进去图片背景）个channel的heat map（本质上可以理解为是cnn所产生的feature map）来。
+
+由于FCN网络前端CNN处理过程中会不断选择用Pool来整合、下采样特征，从而扩大后来层次的receptive fields。因此最终我们生成出来的heat map其大小肯定要小于原输入图片大小。实际上它们之间满足s倍的关系，s为图片中下采样层次stride的乘积即累积下采样步长。
+
+而我们Semantci segmentation的目标是要预测输入图片每个像素点的可能类别的。因此我们要想办法将输出的heat map与input raw image关联起来。简单的话可以直接使用线性二次插值来解决。FCN中通过在网络最后加入步长为s的deconvolution层来使得最终的网络输出heat map具有与输入原图一样的大小。这可以在文章后面的模型代码解析中看得出来。
+
+# FCN网络结构增强
+
+通常CNN网络随着层次的加深，会不断对处理的特征进行抽象、概括描述。这样在较浅的层次一般会有着较细粒度的图片特征像目标边缘等，其较深的层次则渐渐失掉了细特征而只抽象包含反映目标基本概念的特征。有时候像semantic segmentation这种细粒度识别目标轮廓的问题如果只选用最深的CNN feature maps的话往往会过于粗线条而不能细致。因此作者试着考虑将不同层次特征融合，然后共同用于生成最终的heat map。此过程可见于下图。
+
+![FCN网络中的各层次特征融合]
 
 # 参考文献
 * Fully Convolutional Networks for Semantic Segmentation, 2015
 * https://github.com/shelhamer/fcn.berkeleyvision.org
-
+* Adversarial Examples for Semantic Segmentation and Object Detection, 2017
