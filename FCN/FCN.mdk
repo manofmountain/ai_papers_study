@@ -1,0 +1,26 @@
+Title         : Semantic segmentation系列其一：FCN
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+本来无意写FCN的，而是想耐心将R-CNN系列的文章梳理完全。只是在研究已分别在目标识别和实例分割领域成为state-of-art模型的R-FCN与Mask-RCNN网络时，发现它们都借鉴了这篇FCN的idea。于是想在这里先对它作一分析、介绍。
+
+它发在2015年的CVPR与PAMI上，由Berkley的学者来完成。是一篇在Semantic segmentation领域有着开山鼻祖地位的文章。
+
+# 语义分割（Semantci segmentation）
+
+与目标识别（object detection）孜孜于找到图片中的物体位置，并使用框框将其标出不同，Semantic segmentation致力于在更细的粒度上对图片中的物体或有意义区域进行分割。它不像object detection那样只是用框将所识别的物体标识出来，而是在图像像素级别上对包含物体进行区分，从而实现更好的物体轮廓描述与分割。它与Object detection之间的不同可见于以下两副图中。
+
+
+
+* Read the [reference manual].
+* Explore the upper-right toolbox menu to discover how Markdown works. 
+* `Alt-Q` reformats the current paragraph.
+
+# 参考文献
+* Fully Convolutional Networks for Semantic Segmentation, 2015
+* https://github.com/shelhamer/fcn.berkeleyvision.org
+
