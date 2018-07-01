@@ -46,6 +46,113 @@ FCN相对用于图片分类领域的经典网络如Alexnet, VGG, Googlenet等只
 
 ![FCN网络中的各层次特征融合]
 
+# FCN训练
+
+不必多言，FCN训练当中自然也使用了迁移学习即使用分类网络已有的权重初始化整个模型的前端CNN处理网络，然后再使用特定的VOC等dataset对后端新采用的诸层进行finetune。
+
+# FCN网络评价标准
+
+对于这些评价标准使用于所有的semantic segmentation问题。分别如下图所示：
+
+![FCN网络评价指标]
+
+# 代码示例
+
+数据输入层如下，可见我们输入的数据也是一个pair分别为待处理的数据及一个标注着图片上各像素类别信息的label map。这样的数据集显然难标注的多，自然也贵的多。没办法搞AI现在自然是要花钱的，买机器，搞数据集都是花钱的大头。
+
+```
+    def load_image(self, idx):
+        """
+        Load input image and preprocess for Caffe:
+        - cast to float
+        - switch channels RGB -> BGR
+        - subtract mean
+        - transpose to channel x height x width order
+        """
+        im = Image.open('{}/JPEGImages/{}.jpg'.format(self.voc_dir, idx))
+        in_ = np.array(im, dtype=np.float32)
+        in_ = in_[:,:,::-1]
+        in_ -= self.mean
+        in_ = in_.transpose((2,0,1))
+        return in_
+
+
+    def load_label(self, idx):
+        """
+        Load label image as 1 x height x width integer array of label indices.
+        The leading singleton dimension is required by the loss.
+        """
+        im = Image.open('{}/SegmentationClass/{}.png'.format(self.voc_dir, idx))
+        label = np.array(im, dtype=np.uint8)
+        label = label[np.newaxis, ...]
+        return label
+```
+
+FCN网络的后端几层描述，我们能看出它相对于之前的分类CNN，去掉了最后面的FC层，然后加了个Conv层来输出21个channel的feature maps。（21是因为VOC共有21类）。然后再有一个stride为32的deconvolution层来进行上采样以使得最终生成的heat map能够与输入图片一一对应，大小一致。这后面的crop层，是因为我们在前端input data预处理时增对它有padding操作。关于为何作padding，作者的github上有很好的解释。特录在最后面。
+
+```
+layer {
+  name: "score_fr"
+  type: "Convolution"
+  bottom: "fc7"
+  top: "score_fr"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 21
+    pad: 0
+    kernel_size: 1
+  }
+}
+layer {
+  name: "upscore"
+  type: "Deconvolution"
+  bottom: "score_fr"
+  top: "upscore"
+  param {
+    lr_mult: 0
+  }
+  convolution_param {
+    num_output: 21
+    bias_term: false
+    kernel_size: 64
+    stride: 32
+  }
+}
+layer {
+  name: "score"
+  type: "Crop"
+  bottom: "upscore"
+  bottom: "data"
+  top: "score"
+  crop_param {
+    axis: 2
+    offset: 19
+  }
+}
+layer {
+  name: "loss"
+  type: "SoftmaxWithLoss"
+  bottom: "score"
+  bottom: "label"
+  top: "loss"
+  loss_param {
+    ignore_label: 255
+    normalize: false
+  }
+}
+```
+
+# 为何对输入要做padding？
+
+Why pad the input?: The 100 pixel input padding guarantees that the network output can be aligned to the input for any input size in the given datasets, for instance PASCAL VOC. The alignment is handled automatically by net specification and the crop layer. It is possible, though less convenient, to calculate the exact offsets necessary and do away with this amount of padding.
+
 # 参考文献
 * Fully Convolutional Networks for Semantic Segmentation, 2015
 * https://github.com/shelhamer/fcn.berkeleyvision.org
