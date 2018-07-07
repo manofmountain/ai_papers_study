@@ -1,0 +1,39 @@
+Title         : R-CNN系列其五：R-FCN
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+R-CNN系列目标检测模型当中，发展到Faster-RCNN，它的模型检测准确率（及SOTA accuracy）已经达到了顶锋。直到目前为止尚没有一个目标检测模型在检测mAP大小上可以宣称能够在任一数据集上完胜于它。大家开始从其它方面来对它进一步提高，比如在检测时间上面。
+
+R-FCN模型同样提出于微软研究院的Sun,Jian团队（真是AI时代的弄潮儿啊）。它本质上任属于R-CNN系列的检测模型之一，因为它也是两阶段的检测网络，也需要先第一阶段训练得到RPN网络来提供下一阶段的ROIs，然后再进一步由ROIs与图片数据为输入，进一步地去训练检测阶段的网络。
+
+之前Fast-RCNN/Faster-RCNN的模型会将ROI pool层加在网络的中间，使得在ROI pool之后的每个层（其中包含有卷积层）都只在ROI范畴上进行处理，而非像ROI pool之间的层那样在整个图片范畴上进行特征处理。R-FCN与此不同，它的整个网络都是在对整个图片进行处理，只是到了模型的最后，在生成的feature maps之上加上ROI pooling层，然后再分别作分类与定位的回归处理。如此以来，因为它不需要存在某些层只针对ROI窗口处理，所以整体上它的检测速率更快，论文中作者实验证明在RPN平均生成2000个ROIs窗口时，R-FCN可比Faster-RCNN快20倍左右，同时能达到近似的检测mAP值。
+
+# R-FCN的基本结构
+
+R-FCN模型同之前用于Semantic segmentation的FCN模型一样，整个模型当中并没有用到FC层，而是全部由convolution层构成。在模型的最后它生成出了一个特定的包含位置信息的score maps（这是本文最大的创新）。这个最后的scores maps共有k^2(C+1)个输出channels。其中C表示检测目标类别数目，k则表示最终ROI pool时所划分的空间节点数。这样最终的scores maps中会含有特定的第个类别的位置score值即每个具体的channel分别表示每个类所特定网格区域的值大小。
+
+它的基本概念可于下图得见。
+
+![R-FCN用于目标检测的基本思想]
+
+[R-FCN用于目标检测的基本思想]: images/R-FCN-.JPG "R-FCN用于目标检测的基本思想" { width:auto; max-width:90% }
+
+从图上可以看出，整个R-FCN模型只有到了最后才加入了ROI pooling层，而此ROI pooling在对scores maps做pooling时是对每个类之上的k^2个score maps分别按照其区域进行pooling操作即每次每个区域位置只在对应的一个score map上进行pooling处理（这是它模型最难理解的地方，当然也是它的最大创新即score maps上具有区域位置信息之所以能够有效的原因）。
+
+在下述表格中，作者对Faster-RCNN/R-CNN及R-FCN模型上ROI-wise处理的层数目做了比较，从理论上表明了R-FCN在做图片处理并最终进行目标检测时所可能具有的速率优势。
+
+![R-FCN与其它R-CNN模型在方法论上的比较]
+
+[R-FCN与其它R-CNN模型在方法论上的比较]: images/R-FCN-R-CNN-.JPG "R-FCN与其它R-CNN模型在方法论上的比较" { width:auto; max-width:90% }
+
+# R-FCN详解
+
+
+# 参考文献
+
+* R-FCN: Object Detection via Region-based Fully Convolutional Networks, Jifeng-Dai, 2016
+* https://github.com/daijifeng001/r-fcn
