@@ -32,6 +32,242 @@ R-FCN模型同之前用于Semantic segmentation的FCN模型一样，整个模型
 
 # R-FCN详解
 
+上面章节我们讲述了R-FCN模型所包含的最重大的思想。下面我们则分别讲下R-FCN的基本网络结构组成及其中包含计算的特点。首先它的基本架构可见于下图。
+
+![R-FCN模型的基本框架]
+
+可以看出它本质上同其它R-CNN模型一样也是个需要训练出RPN网络的两阶段目标检测模型。另外在模型的最后它输出了一个包含k^2(C+1)个channels的score maps。在此最终的特征score maps上，再进行特殊的ROI pool处理。它的特殊性在于，一个ROI pool针对每个C之上的k^2个channels一起处理，最终生成出一个C channel出来（具有着固定的空间大小即k^2）。而在此pooling处理当中，每个输出grid(i,j)的值都是在此k^2个channel中的某一个即第（i * j)个channel上来完成的，有些绕。。真是需要细加领悟，才能明白（想想，这个Pool是在k^2 channels wise上来进行的，而每个output(i,j) = ROI_pool(channel(i*j)[i,j]))。
+
+然后R-FCN再对此ROI pool层输出的C+1个channels的score maps上进行一个普通的channel-wise的Pool处理（一般为average pool），最终得到一个包含C+1个值的特征相量。对此特征相量，我们可通过与lable值相对比，得出其softmax classification loss来。
+
+以上是类别检测的实现。对位置的检测是同样的。即在最终吐出的feature maps之上，它像之前Fast-RCNN/Faster-RCNN那样有一个并行的分支，用来对ROI的位置信息进行回归检测。因此位置检测分支先生成4 * K^2个score maps出来，然后同以上classification分支一样，对其做一个特殊的ROI pooling处理，然后再使用普通的average pool得到包含4个值的相量，接下来通过与位置信息的ground truth对比，算出反映位置信息的L1 loss出来。
+
+虽然文章中还有些细节实现上的tricks，像减少前端特征提取网络的总步长。然后使用Resnet101 base network的Conv4层，而非是改了步长的Conv5层等，还有其在Conv5层的filter之上所用的hole算法处理。但这些都是末节。。以上所讲才是它的主要概念。下面我们将分析下它这些基本概念的代码实现。
+
+# 代码分析
+
+R-FCN采用了多种基本CNN网络来提取特征。其中Resnet-101是最终效果最好的。它的100个中间层显然没啥好说的，跟论文所说无关。我们只需要关注下它的输入数据特点以及最终在主干网络生成的feature maps之上R-FCN是如何生成score maps以及做ROI pooling等分别进行classification 与localization detection的就可。
+
+以下首先是它的模型输入。这里我们假定已经有了train好的RPN网络所产生的ROIs了，它已是我们模型输入的一部分。此处会发现bbox_targets即反映检测框位置信息的值是8维度的，跟我们平时所以为的x,y,w,h四个值不同。那是因为R-CNN系列模型一直生成两种x,y,w,h的回归值出来，一组为背景，一组则为实际目标。
+
+```
+name: "ResNet-101"
+
+input: "data"
+input_dim: 1
+input_dim: 3
+input_dim: 224
+input_dim: 224
+
+input: "rois"
+input_dim: 1 # to be changed on-the-fly to num ROIs
+input_dim: 5 # [batch ind, x1, y1, x2, y2] zero-based indexing
+input_dim: 1
+input_dim: 1
+
+input: "labels"
+input_dim: 1 # to be changed on-the-fly to match num ROIs
+input_dim: 1
+input_dim: 1
+input_dim: 1
+
+input: "bbox_targets"
+input_dim: 1  # to be changed on-the-fly to match num ROIs
+input_dim: 8 # 4 * (K+1) (=2) classes
+input_dim: 1
+input_dim: 1
+
+input: "bbox_loss_weights"
+input_dim: 1  # to be changed on-the-fly to match num ROIs
+input_dim: 8 # 4 * (K+1) (=2) classes
+input_dim: 1
+input_dim: 1
+```
+
+再向下，我们看下它的score maps生成。可以看出，我们对Resnet-101的输出先是加了新的一个Conv层来将feature maps的channels数由2048降到了1024。然后在其上分别对目标类别与位置生成了包含有k^2 * (C+1)及 k^2 * ( 4 * 2)个channels的score maps。在这里模型使用的是VOC数据集，因此C为21，k则为7（亦可为其它，论文中作者还使用了3）。
+
+```
+#----------------------new conv layer------------------
+layer {
+    bottom: "res5c"
+    top: "conv_new_1"
+    name: "conv_new_1"
+    type: "Convolution"
+    convolution_param {
+        num_output: 1024
+        kernel_size: 1
+        pad: 0
+        weight_filler {
+            type: "gaussian"
+            std: 0.01
+        }
+        bias_filler {
+            type: "constant"
+            value: 0
+        }
+    }
+    param {
+        lr_mult: 1.0
+    }
+    param {
+        lr_mult: 2.0
+    }
+}
+
+layer {
+    bottom: "conv_new_1"
+    top: "conv_new_1"
+    name: "conv_new_1_relu"
+    type: "ReLU"
+}
+
+layer {
+    bottom: "conv_new_1"
+    top: "rfcn_cls"
+    name: "rfcn_cls"
+    type: "Convolution"
+    convolution_param {
+        num_output: 1029 #21*(7^2) cls_num*(score_maps_size^2)
+        kernel_size: 1
+        pad: 0
+        weight_filler {
+            type: "gaussian"
+            std: 0.01
+        }
+        bias_filler {
+            type: "constant"
+            value: 0
+        }
+    }
+    param {
+        lr_mult: 1.0
+    }
+    param {
+        lr_mult: 2.0
+    }
+}
+layer {
+    bottom: "conv_new_1"
+    top: "rfcn_bbox"
+    name: "rfcn_bbox"
+    type: "Convolution"
+    convolution_param {
+        num_output: 392 #8*(7^2) cls_num*(score_maps_size^2)
+        kernel_size: 1
+        pad: 0
+        weight_filler {
+            type: "gaussian"
+            std: 0.01
+        }
+        bias_filler {
+            type: "constant"
+            value: 0
+        }
+    }
+    param {
+        lr_mult: 1.0
+    }
+    param {
+        lr_mult: 2.0
+    }
+}
+```
+
+按下来则是它的特殊ROI pooling的实现。此ROI pooling成功在类别检测分支上将k^2 ( C+ 1)个包含特定位置信息的输入channels 聚合为C + 1个输出channel。同时亦在区域检测分支上将k^2 * 8个包含位置信息的input channels聚会为8个output channel。
+
+```
+#--------------position sensitive RoI pooling--------------
+layer {
+    bottom: "rfcn_cls"
+    bottom: "rois"
+    top: "psroipooled_cls_rois"
+    name: "psroipooled_cls_rois"
+    type: "PSROIPooling"
+    psroi_pooling_param {
+        spatial_scale: 0.0625
+        output_dim: 21
+        group_size: 7
+    }
+}
+
+layer {
+    bottom: "psroipooled_cls_rois"
+    top: "cls_score"
+    name: "ave_cls_score_rois"
+    type: "Pooling"
+    pooling_param {
+        pool: AVE
+        kernel_size: 7
+        stride: 7
+    }
+}
+
+
+layer {
+    bottom: "rfcn_bbox"
+    bottom: "rois"
+    top: "psroipooled_loc_rois"
+    name: "psroipooled_loc_rois"
+    type: "PSROIPooling"
+    psroi_pooling_param {
+        spatial_scale: 0.0625
+        output_dim: 8
+        group_size: 7
+    }
+}
+
+layer {
+    bottom: "psroipooled_loc_rois"
+    top: "bbox_pred"
+    name: "ave_bbox_pred_rois"
+    type: "Pooling"
+    pooling_param {
+        pool: AVE
+        kernel_size: 7
+        stride: 7
+    }
+}
+```
+
+最终我们就得到了模型的输出即它在训练时所采用的loss值及中间检测模型效果的mAP值。
+
+```
+#-----------------------output------------------------
+layer {
+   name: "loss"
+   type: "SoftmaxWithLoss"
+   bottom: "cls_score"
+   bottom: "labels"
+   top: "loss_cls"
+   loss_weight: 1
+   propagate_down: true
+   propagate_down: false
+}
+
+layer {
+   name: "accuarcy"
+   type: "Accuracy"
+   bottom: "cls_score"
+   bottom: "labels"
+   top: "accuarcy"
+   #include: { phase: TEST }
+   propagate_down: false
+   propagate_down: false
+}
+
+layer {
+   name: "loss_bbox"
+   type: "SmoothL1Loss"
+   bottom: "bbox_pred"
+   bottom: "bbox_targets"
+   bottom: "bbox_loss_weights"
+   top: "loss_bbox"
+   loss_weight: 1
+   propagate_down: true
+   propagate_down: false
+   propagate_down: false
+}
+```
 
 # 参考文献
 
