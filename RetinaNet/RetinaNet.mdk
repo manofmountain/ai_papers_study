@@ -1,0 +1,43 @@
+Title         : RetinaNet: Focal loss在目标检测网络中的应用
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+RetinaNet是2018年Facebook AI团队在目标检测领域新的贡献。它的重要作者名单中Ross Girshick与Kaiming He赫然在列。来自Microsoft的Sun Jian团队与现在Facebook的Ross/Kaiming团队在当前视觉目标分类、检测领域有着北乔峰、南慕容一般的独特地位。这两个实验室的文章多是行业里前进方向的提示牌。
+
+RetinaNet只是原来FPN网络与FCN网络的组合应用，因此在目标网络检测框架上它并无特别亮眼创新。文章中最大的创新来自于Focal loss的提出及在单阶段目标检测网络RetinaNet（实质为Resnet + FPN + FCN）的成功应用。Focal loss是一种改进了的交叉熵(cross-entropy, CE)loss，它通过在原有的CE loss上乘了个使易检测目标对模型训练贡献削弱的指数式，从而使得Focal loss成功地解决了在目标检测时，正负样本区域极不平衡而目标检测loss易被大批量负样本所左右的问题。此问题是单阶段目标检测框架（如SSD/Yolo系列）与双阶段目标检测框架（如Faster-RCNN/R-FCN等）accuracy gap的最大原因。在Focal loss提出之前，已有的目标检测网络都是通过像Boot strapping/Hard example mining等方法来解决此问题的。作者通过后续实验成功表明Focal loss可在单阶段目标检测网络中成功使用，并最终能以更快的速率实现与双阶段目标检测网络近似或更优的效果。
+
+# 类别不平衡问题
+
+常规的单阶段目标检测网络像SSD一般在模型训练时会先大密度地在模型终端的系列feature maps上生成出10,000甚至100,0000个目标候选区域。然后再分别对这些候选区域进行分类与位置回归识别。而在这些生成的数万个候选区域中，绝大多数都是不包含待检测目标的图片背景，这样就造成了机器学习中经典的训练样本正负不平衡的问题。它往往会造成最终算出的training loss为占绝对多数但包含信息量却很少的负样本所支配，少样正样本提供的关键信息却不能在一般所用的training loss中发挥正常作用，从而无法得出一个能对模型训练提供正确指导的loss。
+
+常用的解决此问题的方法就是负样本挖掘。或其它更复杂的用于过滤负样本从而使正负样本数维持一定比率的样本取样方法。而在此篇文章中作者提出了可通过候选区域包含潜在目标概率进而对最终的training loss进行较正的方法。实验表明这种新提出的focal loss在单阶段目标检测任务上表现突出，有效地解决了此领域里面潜在的类别不平衡问题。
+
+# Focal loss
+
+* CE(cross-entropy) loss
+
+以下为典型的交叉熵loss，它广泛用于当下的图像分类、检测CNN网络当中。
+
+![Cross-entropy_loss]
+
+[Cross-entropy_loss]: images/Cross-entropy_loss.JPG "Cross-entropy_loss" { width:auto; max-width:90% }
+
+* Balanced CE loss
+
+考虑到上节中提到的类别不平衡问题对最终training loss的不利影响，我们自然会想到可通过在loss公式中使用与目标存在概率成反比的系数对其进行较正。如下公式即是此朴素想法的体现。它也是作者最终Focus loss的baseline。
+
+![Balanced_CE-loss]
+
+[Balanced_CE-loss]: images/Balanced_CE-loss.JPG "Balanced_CE-loss" { width:auto; max-width:90% }
+
+* Focal loss定义
+
+以下是作者提出的focal loss的想法。
+
+![Focal_loss定义]
+
+[Focal_loss定义]: images/Focal_loss-.JPG "Focal_loss定义" { width:auto; max-width:90% }
