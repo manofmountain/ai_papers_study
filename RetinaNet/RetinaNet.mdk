@@ -41,3 +41,54 @@ RetinaNet只是原来FPN网络与FCN网络的组合应用，因此在目标网�
 ![Focal_loss定义]
 
 [Focal_loss定义]: images/Focal_loss-.JPG "Focal_loss定义" { width:auto; max-width:90% }
+
+下图为focal loss与常规CE loss的对比。从中，我们易看出focal loss所加的指数式系数可对正负样本对loss的贡献自动调节。当某样本类别比较明确些，它对整体loss的贡献就比较少；而若某样本类别不易区分，则对整体loss的贡献就相对偏大。这样得到的loss最终将集中精力去诱导模型去努力分辨那些难分的目标类别，于是就有效提升了整体的目标检测准度。不过在此focus loss计算当中，我们引入了一个新的hyper parameter即γ。一般来说新参数的引入，往往会伴随着模型使用难度的增加。在本文中，作者有试者对其进行调节，线性搜索后得出将γ设为2时，模型检测效果最好。
+
+![几种loss的对比]
+
+[几种loss的对比]: images/-loss-.JPG "几种loss的对比" { width:auto; max-width:90% }
+
+在最终所用的focal loss上，作者还引入了α系数，它能够使得focal loss对不同类别更加平衡。实验表明它会比原始的focal loss效果更好。
+
+![最终所用的Focal_loss]
+
+[最终所用的Focal_loss]: images/-Focal_loss.JPG "最终所用的Focal_loss" { width:auto; max-width:90% }
+
+# 模型的初始化参数选择
+
+一般我们初始化CNN网络模型时都会使用无偏的参数对其初始化，比如Conv的kernel 参数我们会以bias 为0，variance为0.01的某分布来对其初始化。但是如果我们的模型要去处理类别极度不平衡的情况，那么就会考虑到这样对训练数据分布无任选先验假设的初始化会使得在训练过程中，我们的参数更偏向于拥有更多数量的负样本的情况去进化。作者观察下来发现它在训练时会出现极度的不稳定。于是作者在初始化模型最后一层参数时考虑了数据样本分布的不平衡性，这样使得初始训练时最终得出的loss不会对过多的负样本数量所惊讶到，从而有效地规避了初始训练时模型的震荡与不稳定。
+
+# RetinaNet检测框架
+
+RetinaNet本质上是Resnet + FPN + 两个FCN子网络。
+以下为RetinaNet目标框架框架图。有了之前blog里面提到的FPN与FCN的知识后，我们很容易理解此框架的设计含义。
+
+![RetinaNet目标检测框架]
+
+[RetinaNet目标检测框架]: images/RetinaNet-.JPG "RetinaNet目标检测框架" { width:auto; max-width:90% }
+
+一般主干网络可选用任一有效的特征提取网络如vgg16或resnet系列，此处作者分别尝试了resnet-50与resnet-101。而FPN则是对resnet-50里面自动形成的多尺度特征进行了强化利用，从而得到了表达力更强、包含多尺度目标区域信息的feature maps集合。最后在FPN所吐出的feature maps集合上，分别使用了两个FCN子网络（它们有着相同的网络结构却各自独立，并不share参数）用来完成目标框类别分类与位置回归任务。
+
+# 模型的推理与训练
+
+* 模型推理
+
+一旦我们有了训练好的模型，在正式部署时，只需对其作一次forward，然后对最终生成的目标区域进行过渡。然后只对每个FPN level上目标存在概率最高的前1000个目标框进一步地decoding处理。接下来再将所有FPN level上得到的目标框汇集起来，统一使用极大值抑制的方法进一步过渡（其中极大值抑制时所用的阈值为0.5）。这样，我们就得到了最终的目标与其位置框架。
+
+* 模型训练
+
+模型训练中主要在后端Loss计算时采用了Focal loss，另外也在模型初始化时考虑到了正负样本极度不平衡的情况进而对模型最后一个conv layer的bias参数作了有偏初始化。
+
+训练时用了SGD，mini batch size为16，在8个GPU上一块训练，每个GPU上local batch size为2。最大iterations数目为90,000；模型初始lr为0.01,接下来随着训练进行分step wisely 降低。真正的training loss则为表达目标类别的focus loss与表达目标框位置回归信息的L1 loss的和。
+
+下图为RetinaNet模型的检测准度与性能。
+
+![RetinaNet的检测准度与性能]
+
+# 代码实例
+
+
+# 参考文献
+
+* Focal Loss for Dense Object Detection, Tsung-Yi Lin, 2018
+* https://github.com/facebookresearch/Detectron
