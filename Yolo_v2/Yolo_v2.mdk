@@ -10,6 +10,11 @@ Logo          : True
 
 经过一年的蛰伏之后，Yolo卷土重来，于2016年推出了改进后的Yolo v2。它有效地借鉴了Faster-RCNN/SSD中使用的思想，成功地使Yolo v2模型成为了新的state-of-art端到端目标检测网络。
 
+![Yolo_v2]
+
+[Yolo_v2]: images/Yolo_v2.JPG "Yolo_v2" { width:auto; max-width:90% }
+
+
 # Yolo v2
 
 不多废话，直接说下Yolo v2相对于之前的Yolo v1所多的改进吧。
