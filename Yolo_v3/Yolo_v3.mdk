@@ -1,0 +1,139 @@
+Title         : Yolo系列其三：Yolo_v3
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+如果你已读过之前Yolo v1与Yolo v2系列的文章，另外对FPN/RetinaNet等模型也有所了解，那么等你看Yolo v3时就会发现它真的没有啥新货。
+
+简单说Yolo v3是在之前Yolo v2的基础上引入了一些小的改进像positive bounding box的选取，darknet-53中对residual learning思想的引用，类似于FPN的multi-scales feature maps使用等等。但这些小的改动引入之后，新的Yolo v3确实使得最终的mAP值达到了与SSD近似的程度，同时其速度更是要快上3倍。虽然其最优的mAP值与当下火热的RetinaNet网络还有不小差距，但与RetinaNet相比，它在能达到同等程度的mAP值时却能保证有更快的速度。
+
+![Yolo_v3与其它模型检测方法在COCO数据集上的性能比较]
+
+[Yolo_v3与其它模型检测方法在COCO数据集上的性能比较]: images/Yolo_v3-COCO-.JPG "Yolo_v3与其它模型检测方法在COCO数据集上的性能比较" { width:auto; max-width:90% }
+
+
+看明白了吧。Yolo v3延续了Yolo系列模型一贯的特点，那就是mAP值比不过你就跟你较量速度，虽然你丫预测得准，但俺脚步更快。在这么个一切求快的时代，显然速度上佳，甚至能保证实时响应是一个听上去相当有诱惑力也挺唬人的一个东东。
+
+# Yolo v3引入的改进
+
+## Bounding box预测
+
+以下为Yolo v3中所采用的bounding box坐标的预测，显然其与Yolo v2中采用的并无二致。
+
+b~x~ = σ(t~x~) + c~x~
+b~y~ = σ(t~y~) + c~y~
+b~w~ = p~w~e^t~w~^
+b~h~ = p~h~e^t~h~^
+
+下图为上述公式的详细解释，同样是原来Yolo v2就已经有过的内容。
+
+![Yolo_v3中bounding_box的预测]
+
+[Yolo_v3中bounding_box的预测]: images/Yolo_v3-bounding_box-.JPG "Yolo_v3中bounding_box的预测" { width:auto; max-width:90% }
+
+不过它在判断anchor box的正负时，每个ground truth box只会选用一个与它有最大IOU的anchor box作为正的anchor box，而不再使用一个threshold（一般为0.5），然后将超过此threshold值的anchor box也视为正样本框。这一点是它与SSD或Faster-RCNN系列模型不同的地方。
+
+## 类预测
+
+Yolo v3使用多目标的方式进行分类，而不再使用softmax，隐含地视所有的bounding boxes只可能属于一类物体。它在最终的loss层中简单地使用逻辑回归来得到每个bounding所属的类别分布，然后再使用cross-entropy来计算training loss。
+
+## multi-scales的采用
+
+类似于FPN网络，Yolo v3中采用了相似的思想使用后面三个Conv层的特征来进行预测。在这些层之间也像FPN那样有up-to-down和down-to-up的数据通路。
+此外它anchor box dimensions的选取同Yolo v2一样也是通过对训练数据集做k-means聚类得到的。它会将选择出的9个anchor box平均地分布到三个scales的feature maps当中。
+
+在COCO数据集中，聚类得到的9个anchor box scales分别为：(10×13); (16×30); (33×23); (30×61); (62×45); (59×
+119); (116 × 90); (156 × 198); (373 × 326)。
+
+## darknet-53
+
+Yolo v3中引入了更为强大的特征提取网络darknet-53。它有效借鉴了residual networks中的思想，加上它之前有用过的network in network（或者googlenet）中的使用1x1的conv层在常规3x3 conv层之后作multi feature map channels整合与约减的思想，同时层次与yolo v2中用过的darknet-19也大大加深。最终它能在Imagenet上达到与Resnet-152近似的分类性能（77.2% vs 77.6%），同时比后者拥有更快的计算速度（2x）。
+
+以下两图分别为darknet-53的模型结构与它在分类数据集上和其它模型的性能比较。
+
+![Darknet-53]
+
+[Darknet-53]: images/Darknet-53.JPG "Darknet-53" { width:auto; max-width:90% }
+
+![Darknet-53与其它分类网络的性能比较]
+
+[Darknet-53与其它分类网络的性能比较]: images/Darknet-53-.JPG "Darknet-53与其它分类网络的性能比较" { width:auto; max-width:90% }
+
+# 其它的教训与结论
+
+* 像RPN等网络那样的预测anchor box的位置偏离等信息会造成模型训练时的震荡。
+* 直接线性地预测x,y的偏离而不是像上文中那样使用logistic action同样被证明是不可取的，会导致几个mAP点的下降。
+* Focal loss的引入同样会使最终的mAP值下降几个点。分析认为在预测anchor box位置时,objectness的引入即其在最终loss计算时所起的作用表明潜在的过多的negative box不会对classification loss分支产生较大影响。
+* 双重IOU计算标准的引入造成模型精度不一表明当下multi-scales的引入使得Yolo v3可以较好地预测出小scale的目标但却在大scale的目标上产生了不少的错误。
+
+# 代码分析
+
+以下为Yolo v3的前端输入及整个模型训练超参数。
+
+```
+[net]
+# Testing
+batch=1
+subdivisions=1
+# Training
+# batch=64
+# subdivisions=16
+width=416
+height=416
+channels=3
+momentum=0.9
+decay=0.0005
+angle=0
+saturation = 1.5
+exposure = 1.5
+hue=.1
+
+learning_rate=0.001
+burn_in=1000
+max_batches = 500200
+policy=steps
+steps=400000,450000
+scales=.1,.1
+```
+
+以下为yolo v3中scales/conv feature maps层/anchor boxes数目/正负threshold判别等的选取。
+
+```
+[yolo]
+mask = 6,7,8
+anchors = 10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326
+classes=80
+num=9
+jitter=.3
+ignore_thresh = .7
+truth_thresh = 1
+random=1
+```
+
+新引入的up-to-down的通路。借鉴了FPN中的思想。
+```
+[route]
+layers = -4
+
+[convolutional]
+batch_normalize=1
+filters=256
+size=1
+stride=1
+pad=1
+activation=leaky
+
+[upsample]
+stride=2
+
+[route]
+layers = -1, 61
+```
+
+# 参考文献
+
+* YOLOv3: An Incremental Improvement, Joseph-Redmon, 2018
+* https://pjreddie.com/darknet/yolo/
