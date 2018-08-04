@@ -1,0 +1,232 @@
+Title         : 经典分类CNN模型系列其一：Alexnet
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+传统的机器学习分类模型像SVM，逻辑回归，决策树，甚至贝叶斯网络等在CNN推动的深度学习近几年大肆发展之后，都已纷纷被秒成了渣。这一切都始于2012年。Alexnet的横空出世及其在ILSVRC 2012 Imagenet数据集分类大赛中表现出的摧枯拉朽的领先正式宣告了深度学习纪元的开启。
+
+其实CNN模型并非啥新玩意，早在1997年Yang, Lecun就有实现过一个CNN模型并将之用于类似于MNST问题的分类上面。可Alexnet网络则表明凭着当前计算设备（GPUs/多核CPUs/FPGA/ASICs）带来的强大并行计算能力，数据科学家对模型结构及参数炼金术般地奇技淫巧，加上工程师们对网络算法代码实现的极致优化等，多层次的复杂CNN网络可以成功地用于解决大规模的数据分类问题，并可在其它未见过的数据集上体现良好的模型通用性。
+
+总之，我们想回头看看深度学习大发展之渊薮，那么Alexnet就会首先映入眼帘。
+
+![Alexnet网络结构概述]
+
+
+# Alexnet框架
+
+下面分别介绍下它相对之前的CNN模型较为新颖的若干地方。
+
+## ReLU激活函数的使用
+
+一般传统CNN模型都会使用tanh函数或sigmoid函数作为每个层输出的激活函数。但这两个函数一般会有易陷入饱和的特点。作者在此借鉴了前人的工作，使用ReLu作为每层的激活函数。实验结果表示ReLU可以加快模型收敛的速度。下图为三个激活函数同样在CIFAR-10数据集上达到25%的training error时所需的训练epochs数目。
+
+![ReLU与其它激活函数在收敛速度上的对比]
+
+[ReLU与其它激活函数在收敛速度上的对比]: images/ReLU-.JPG "ReLU与其它激活函数在收敛速度上的对比" { width:auto; max-width:90% }
+
+## 使用多个GPUs进行模型并行训练
+
+一般从事多节点深度学习模型训练的朋友都知道，多节点训练共有两种模式。一种为数据并行即多个节点上使用相同的模型（网络结构与参数），但每个training iteration，不同节点使用不同的数据patch进行训练，在其中反向传递所产生的参数梯度上再进行all-reduce操作，产生出的平均的gradients用于更新参数。这样最终每个节点上的模型参数始终可保持一致。另一种多节点训练模式则为模型并行即将一个网络的不同计算单元分别划分到不同的节点上面，每个节点分别完成其中不同的计算，节点之间会相互依赖彼此的结果以完成一次完成的training iteration。
+
+在Alexnet上，作者就使用了两个GPUs设备进行模型并行训练。它将Alexnet网络中一些计算量较大的层像最后的FC层及稍中间的Convs层的filters集合划分到了两个GPUs上面，然后将相关的计算分别在这两个GPUs上来完成。这个完全是工程实现上的考虑，毕竟Alexnet虽然只有8层，但却有近六千万个训练参数，这么一个复杂模型的训练对于计算及内存开销都有较高的要求。GPUs的计算性能及其上的内存大小都对Alexnet最终是啥样有较强的限制。
+
+## LRN（Local Response Normalization）
+
+每个Conv层计算后经过ReLU activation函数处理生成出了相应的feature maps。接下来为了减少模型过于复杂（参数过多）带来的潜在overfitting，作者还使用了LRN的处理。它的公式如下：
+
+![LRN_计算公式]
+
+[LRN_计算公式]: images/LRN_-.JPG "LRN_计算公式" { width:auto; max-width:90% }
+
+在当下更新的分类模型里面像Resnet/Inception v3等当中已经不再使用LRN来作feature 归一化了，现在它们都用BN(batch normalization)。在后续的博文中自然会对此进行介绍。
+
+## overlapping pooling层
+
+在一般CNN模型里面用到的Pooling层多是non-overlapping的。即如果pool的kernel size为kxk，步长为sxs，那么k == s。在Alexnet中，作者发现如果将s 设为比k稍小（比如k为3时，s设为了2)，那么可能得到更高的分类精度，而且也更不易overfitting。呵呵，原理合在没有解释，不妨归为炼金术中的一种。
+
+## 整体的模型架构
+
+下图为Alexnet的整体模型结构，容易看出它有5个Conv层加上3个FC层来构成，另外在模型中的若干计算密集层上使用了2 GPUs的模型并行。
+
+![Alexnet的网络模型结构]
+
+[Alexnet的网络模型结构]: images/Alexnet-.JPG "Alexnet的网络模型结构" { width:auto; max-width:90% }
+
+# 消除Overfitting
+
+## 数据增强
+
+这是个传统机器学习方法一般会用到的消除训练模型overfitting的方法。作者在实验中共用了两种方法。
+
+* 对得到的图片进行水平或竖直方向上的镜像处理及对原图选择不同的切的位置。总之最终模型的输入为224x224的patches。
+* 改变输入图片之上的RGB通道的某些位置上的像素值大小，这样使得模型学会处理有着不同明暗、对比度等特点的图片。
+
+## Dropout层
+
+通过在FC层的后面接上Dropout层即对其上的hidden unit分别以一定的规律(一般为0.5)来决定是否将其用于后续的forward计算及接下来的backward处理。这样迫使模型在训练中学会减少众多kernel 参数之间的依赖性，从而可以学会鲁棒性更好的模型参数组合。Dropout层现在已经发展成为有FC层的CNN网络的标配了。不过话说回来现在的CNN分类网络越来越倾向于抛弃掉FC层了，所以在消除overfitting上，当前最流行的还数BN层。
+
+# 实验结果
+
+下表为Alexnet与其它非CNN经典模型在Imagenet 2010数据集上的分类结果对比。其领先优势还是比较大的。
+
+![Alexnet实验结果]
+
+# 代码分析
+
+作者原文中的代码实现是基于cuda-convnet来完成的。鉴于它比较小众，而且Alexnet早已作为一个成熟的模型在很多深度学习框架上有了很多良好实现。因此我们这里使用Intel caffe里面所提供的在CPU上已经过充分实验，保证了其test convergence及训练、推理速度的模型来看下它的代码（毕竟对一般吃瓜群众，GPUs计算性能是较美好，但也太贵了些。CPUs的普遍性加上Intel花大力气培养的深度学习框架的team在它之上作的优化让一些CNN的训练或推理在CPUs上跑起已并非如以往那么慢了）。
+
+首先是它的Data层，这一个所有的分类CNN网络几无二致。
+```
+name: "AlexNet"
+layer {
+  name: "data"
+  type: "Data"
+  top: "data"
+  top: "label"
+  include {
+    phase: TRAIN
+  }
+  transform_param {
+    mirror: true
+    crop_size: 227
+    mean_file: "data/ilsvrc12/imagenet_mean.binaryproto"
+  }
+  data_param {
+    source: "examples/imagenet/ilsvrc12_train_lmdb"
+    batch_size: 256
+    backend: LMDB
+  }
+}
+```
+
+模型中所用到的典型的几个层。整个模型的前面CNN特征处理部分差不多是以下一个套路的叠加。
+```
+layer {
+  name: "conv1"
+  type: "Convolution"
+  bottom: "data"
+  top: "conv1"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 96
+    kernel_size: 11
+    stride: 4
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+}
+layer {
+  name: "relu1"
+  type: "ReLU"
+  bottom: "conv1"
+  top: "conv1"
+}
+layer {
+  name: "norm1"
+  type: "LRN"
+  bottom: "conv1"
+  top: "norm1"
+  lrn_param {
+    local_size: 5
+    alpha: 0.0001
+    beta: 0.75
+  }
+}
+layer {
+  name: "pool1"
+  type: "Pooling"
+  bottom: "norm1"
+  top: "pool1"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    stride: 2
+  }
+}
+```
+
+如下为对FC层的实现及其后的Dropout层描述。
+```
+layer {
+  name: "fc7"
+  type: "InnerProduct"
+  bottom: "fc6"
+  top: "fc7"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  inner_product_param {
+    num_output: 4096
+    weight_filler {
+      type: "gaussian"
+      std: 0.005
+    }
+    bias_filler {
+      type: "constant"
+      value: 0.1
+    }
+  }
+}
+layer {
+  name: "relu7"
+  type: "ReLU"
+  bottom: "fc7"
+  top: "fc7"
+}
+layer {
+  name: "drop7"
+  type: "Dropout"
+  bottom: "fc7"
+  top: "fc7"
+  dropout_param {
+    dropout_ratio: 0.5
+  }
+}
+```
+
+最后就是分类模型都要做的accuracy及loss层。这个在所有的CNN分类网络当中也都是一样的实现。
+```
+layer {
+  name: "accuracy"
+  type: "Accuracy"
+  bottom: "fc8"
+  bottom: "label"
+  top: "accuracy"
+  include {
+    phase: TEST
+  }
+}
+layer {
+  name: "loss"
+  type: "SoftmaxWithLoss"
+  bottom: "fc8"
+  bottom: "label"
+  top: "loss"
+}
+```
+
+# 参考文献
+
+* ImageNet Classification with Deep Convolutional Neural Networks, Alex-Krizhevsky, 2012
+* https://github.com/intel/caffe
