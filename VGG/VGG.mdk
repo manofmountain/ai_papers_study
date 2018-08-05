@@ -1,0 +1,239 @@
+Title         : 经典分类CNN模型系列其二：VGG
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+自Alexnet于2012年的ILSVRC大赛中奋勇夺魁后，ConvNet就不可抑制地大发展了起来。2014年新的一届ILSVRC大赛中Googlenet与VGG的身影分外亮眼。Googlenet相对VGG而言在网络结构上有了更新的突破，不过其复杂度也大大增加了。VGG相对Googlenet虽然精度略逊些，但其整体网络框架还是延续了Alexnet及更早的Lenet等的一贯思路，此外还更深入的探讨了ConvNet深度对模型性能可能的影响。由于其整个网络结构的简单、强大，VGG16/VGG19曾一度广泛被用作各种检测网络框架像Faster-RCNN/SSD等的主干特征提取网络，直到Resnet提出之后，它才渐渐完成了其历史使命，退居二线了。。不过至今仍有许多计算机视觉领域内的任务会考虑VGG的网络设计来构建其新的应用网络模型。
+
+![VGG网络结构]
+
+
+# VGG的几种网络架构
+
+下表所示为VGG论文当中实验过的几种ConvNet结构。它们其本采用了3x3的Conv kernel，pad/stride为1，只是在其中的若干Conv层后会置MaxPool层来作特征的上采样以高度抽象特征，节省后续的计算。然后在每个网络的最后则是同其它分类网络一样的若干个FCs层及Softmax（注意，在更为近代的Resnet/Googlenet系列模型当中已经去掉了参数非常多，计算量大的FC层，而改用了更好使的Average Pool层）。在这些网络结构中，VGG16与VGG19（表中的D网络与E网络）最为受人欢迎，它们在各大Frameworks上训练好的模型参数在网上都可公开获得。
+
+![VGG网络的几种结构]
+
+[VGG网络的几种结构]: images/VGG-.JPG "VGG网络的几种结构" { width:auto; max-width:90% }
+
+作者表明虽然两个级联的3x3 conv或三个级联的3x3 conv分别在理论上等价于一个5x5 conv及一个7x7 conv。不过它们所具的模型参数（9*C^2与27*C^2）则分别要少于后两者的数目（分别为25*C^2与49*C^2）。同时作者实验表明更深（层数更多）而非更宽（conv channels更多）的网络有着自动规则自己参数的能力，因此有着更好的学习能力。（呵呵，这恐怕亦是一炼金术中招数，难有理论支撑吧，多半是作者在此种VGG类型网络中得到的经验总结）。
+
+# VGG分类框架
+
+## VGG训练
+
+同Alexnet一样，也是用SGD对网络进行训练。其训练中用到的超参数像Learning rate/Dacay factor等与Alexnet也几乎一样。训练中用到的输入图片增强，VGG也是使用了一样的image shift及Random crop两种技术。
+
+不过对于输入图片的维度，VGG分别实验了两种方法。一种是采用固定的维度输入，论文中分别尝试了256x256与384x384两种输入图片维度。另外一种则是采用了多维度训练及每次输入图片从一个维度范围内（[256, 512])进行选择，resize后再用于进行训练。这种方法显然会受模型最后的几个FCs层的限制，因此作者特意将第一个FC改为了7x7的conv，后两个FC则改为了1x1的conv，最后如Googlenet那样接上了一个Average Pool层对得到的1000个（Imagenet共有1000类）score maps进行channel级加总，最后再用softmax层处理就得到了1000类的概率分布。
+
+## VGG推理
+
+推理时VGG将完整的image直接通过训练好的VGG模型，其中在multi-scal训过的VGG上它最终后先得到一个1000个channels的score maps，然后经Average Pool层再得到最终的1000类的概率分布。作者实验了曾被证明较为成功的multi-crop图片进行预测，然后再对其求平场的方式，发现效果并不明显，提升精度有限，而且会带来较大的计算量。
+
+## 训练细节
+
+作者在论文中的实验结果是使用了4个GPUs作多节点数据并行训练得到的。
+
+# 实验结果
+
+首先下表为多种不同深度的VGG网络所分别具有的分类精度比较。可以看出最深的VGG16与VGG19表现突出。不过作者实验也表明若使用此类结构再进进一步对网络加深，那么其分类精度也不会再进一步提升了。换言之对于VGG类型的3x3 single scale conv叠加的网络而言，19层是它的天花板，再向上加层已无意义。
+
+![不同VGG网络配置得到的实验结果对比]
+
+[不同VGG网络配置得到的实验结果对比]: images/-VGG-.JPG "不同VGG网络配置得到的实验结果对比" { width:auto; max-width:90% }
+
+
+下表为VGG网络与当时其它的分类网络的结果比较。
+
+![VGG与其它分类网络的性能比较]
+
+# 代码分析
+
+作者本来就是基于Caffe完成的此网络实现。因此这里我们也使用caffe下的模型描述来分析下它的结构。
+
+首先是它的基本输入层，与Alexnet网络一样。其用于完成数据增强的工作多是在transform里面完成，可见它只是用了Mirror镜像处理增强，此外就是以227x227的size对原图进行切割，在真正灌入网络之前还会使用已有的dataset mean file对图片进行归一化操作。
+
+```
+name: "AlexNet"
+layer {
+  name: "data"
+  type: "Data"
+  top: "data"
+  top: "label"
+  include {
+    phase: TRAIN
+  }
+  transform_param {
+    mirror: true
+    crop_size: 227
+    mean_file: "data/ilsvrc12/imagenet_mean.binaryproto"
+  }
+  data_param {
+    source: "examples/imagenet/ilsvrc12_train_lmdb"
+    batch_size: 256
+    backend: LMDB
+  }
+}
+```
+
+
+以下是它网络的基本组成成分。差不多就是Conv(3x3)+ReLu+LRN或者Conv(3x3)+ReLu+LRN+Pool(2x2)。注意后来更先进的分类网络已经纷纷抛弃了LRN而改用了更好的BN。
+```
+layer {
+  name: "conv1"
+  type: "Convolution"
+  bottom: "data"
+  top: "conv1"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 96
+    kernel_size: 11
+    stride: 4
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+}
+layer {
+  name: "relu1"
+  type: "ReLU"
+  bottom: "conv1"
+  top: "conv1"
+}
+layer {
+  name: "norm1"
+  type: "LRN"
+  bottom: "conv1"
+  top: "norm1"
+  lrn_param {
+    local_size: 5
+    alpha: 0.0001
+    beta: 0.75
+  }
+}
+layer {
+  name: "pool1"
+  type: "Pooling"
+  bottom: "norm1"
+  top: "pool1"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    stride: 2
+  }
+}
+```
+
+与Alexnet一样，在第一个参数量较多的FC层后也用了dropout来防止模型在训练当中出现过拟合。
+
+```
+layer {
+  name: "fc6"
+  type: "InnerProduct"
+  bottom: "pool5"
+  top: "fc6"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  inner_product_param {
+    num_output: 4096
+    weight_filler {
+      type: "gaussian"
+      std: 0.005
+    }
+    bias_filler {
+      type: "constant"
+      value: 0.1
+    }
+  }
+}
+layer {
+  name: "relu6"
+  type: "ReLU"
+  bottom: "fc6"
+  top: "fc6"
+}
+layer {
+  name: "drop6"
+  type: "Dropout"
+  bottom: "fc6"
+  top: "fc6"
+  dropout_param {
+    dropout_ratio: 0.5
+  }
+}
+```
+
+然后就是最后的FC及用于训练的SoftmaxLoss层和用于推理的Accuracy层。
+
+```
+layer {
+  name: "fc8"
+  type: "InnerProduct"
+  bottom: "fc7"
+  top: "fc8"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  inner_product_param {
+    num_output: 1000
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 0
+    }
+  }
+}
+layer {
+  name: "accuracy"
+  type: "Accuracy"
+  bottom: "fc8"
+  bottom: "label"
+  top: "accuracy"
+  include {
+    phase: TEST
+  }
+}
+layer {
+  name: "loss"
+  type: "SoftmaxWithLoss"
+  bottom: "fc8"
+  bottom: "label"
+  top: "loss"
+}
+```
+
+# 参考文献
+
+* VERY DEEP CONVOLUTIONAL NETWORKS FOR LARGE-SCALE IMAGE RECOGNITION, Karen-Simonyan & Andrew-Zisserman, 2015
+* https://github.com/intel/caffe
+
+
