@@ -123,9 +123,774 @@ inception v1中稀疏表达模块的思想在inception v2中得到了较好的�
 
 # 代码分析
 
+我们还是通过intel caffe里面的inception v3 prototxt file来看下它的模型设计实验吧。当然重点是看新引入的两种inception module设计。单纯去看prototxt file的话会有些不方便，毕竟配置文件实在是太长了，建议使用Netscope这个新工具导入caffe的prototxt file去图形化认识它的网络结果。
+
+此模型位置可于intel caffe的此处看到：models/intel_optimized_models/benchmark/googlenet_v3/train_val.prototxt。
+
+如下为inception模型变形一。
+
+```
+layer {
+  name: "mixed_3_conv_conv2d"
+  type: "Convolution"
+  bottom: "ch_concat_mixed_2_chconcat"
+  top: "mixed_3_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 384
+    bias_term: false
+    pad: 0
+    kernel_size: 3
+    stride: 2
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_3_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_3_conv_conv2d"
+  top: "mixed_3_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_3_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_3_conv_conv2d_bn"
+  top: "mixed_3_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_3_tower_conv_conv2d"
+  type: "Convolution"
+  bottom: "ch_concat_mixed_2_chconcat"
+  top: "mixed_3_tower_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 64
+    bias_term: false
+    pad: 0
+    kernel_size: 1
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_3_tower_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_3_tower_conv_conv2d"
+  top: "mixed_3_tower_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_3_tower_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_3_tower_conv_conv2d_bn"
+  top: "mixed_3_tower_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_3_tower_conv_1_conv2d"
+  type: "Convolution"
+  bottom: "mixed_3_tower_conv_conv2d_relu"
+  top: "mixed_3_tower_conv_1_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 96
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_3_tower_conv_1_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_3_tower_conv_1_conv2d"
+  top: "mixed_3_tower_conv_1_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_3_tower_conv_1_relu"
+  type: "ReLU"
+  bottom: "mixed_3_tower_conv_1_conv2d_bn"
+  top: "mixed_3_tower_conv_1_conv2d_relu"
+}
+layer {
+  name: "mixed_3_tower_conv_2_conv2d"
+  type: "Convolution"
+  bottom: "mixed_3_tower_conv_1_conv2d_relu"
+  top: "mixed_3_tower_conv_2_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 96
+    bias_term: false
+    pad: 0
+    kernel_size: 3
+    stride: 2
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_3_tower_conv_2_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_3_tower_conv_2_conv2d"
+  top: "mixed_3_tower_conv_2_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_3_tower_conv_2_relu"
+  type: "ReLU"
+  bottom: "mixed_3_tower_conv_2_conv2d_bn"
+  top: "mixed_3_tower_conv_2_conv2d_relu"
+}
+layer {
+  name: "max_pool_mixed_3_pool"
+  type: "Pooling"
+  bottom: "ch_concat_mixed_2_chconcat"
+  top: "max_pool_mixed_3_pool"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    stride: 2
+    pad: 0
+  }
+}
+```
+
+如下为inception v2/v3中所使用的较为新颖的下采样模块的表示。
+
+```
+layer {
+  name: "mixed_2_conv_conv2d"
+  type: "Convolution"
+  bottom: "ch_concat_mixed_1_chconcat"
+  top: "mixed_2_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 64
+    bias_term: false
+    pad: 0
+    kernel_size: 1
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_2_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_2_conv_conv2d"
+  top: "mixed_2_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_2_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_2_conv_conv2d_bn"
+  top: "mixed_2_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_2_tower_conv_conv2d"
+  type: "Convolution"
+  bottom: "ch_concat_mixed_1_chconcat"
+  top: "mixed_2_tower_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 48
+    bias_term: false
+    pad: 0
+    kernel_size: 1
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_2_tower_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_2_tower_conv_conv2d"
+  top: "mixed_2_tower_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_2_tower_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_2_tower_conv_conv2d_bn"
+  top: "mixed_2_tower_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_2_tower_conv_1_conv2d"
+  type: "Convolution"
+  bottom: "mixed_2_tower_conv_conv2d_relu"
+  top: "mixed_2_tower_conv_1_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 64
+    bias_term: false
+    pad: 2
+    kernel_size: 5
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_2_tower_conv_1_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_2_tower_conv_1_conv2d"
+  top: "mixed_2_tower_conv_1_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_2_tower_conv_1_relu"
+  type: "ReLU"
+  bottom: "mixed_2_tower_conv_1_conv2d_bn"
+  top: "mixed_2_tower_conv_1_conv2d_relu"
+}
+layer {
+  name: "mixed_2_tower_1_conv_conv2d"
+  type: "Convolution"
+  bottom: "ch_concat_mixed_1_chconcat"
+  top: "mixed_2_tower_1_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 64
+    bias_term: false
+    pad: 0
+    kernel_size: 1
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_2_tower_1_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_2_tower_1_conv_conv2d"
+  top: "mixed_2_tower_1_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_2_tower_1_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_2_tower_1_conv_conv2d_bn"
+  top: "mixed_2_tower_1_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_2_tower_1_conv_1_conv2d"
+  type: "Convolution"
+  bottom: "mixed_2_tower_1_conv_conv2d_relu"
+  top: "mixed_2_tower_1_conv_1_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 96
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_2_tower_1_conv_1_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_2_tower_1_conv_1_conv2d"
+  top: "mixed_2_tower_1_conv_1_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_2_tower_1_conv_1_relu"
+  type: "ReLU"
+  bottom: "mixed_2_tower_1_conv_1_conv2d_bn"
+  top: "mixed_2_tower_1_conv_1_conv2d_relu"
+}
+layer {
+  name: "mixed_2_tower_1_conv_2_conv2d"
+  type: "Convolution"
+  bottom: "mixed_2_tower_1_conv_1_conv2d_relu"
+  top: "mixed_2_tower_1_conv_2_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 96
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_2_tower_1_conv_2_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_2_tower_1_conv_2_conv2d"
+  top: "mixed_2_tower_1_conv_2_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_2_tower_1_conv_2_relu"
+  type: "ReLU"
+  bottom: "mixed_2_tower_1_conv_2_conv2d_bn"
+  top: "mixed_2_tower_1_conv_2_conv2d_relu"
+}
+layer {
+  name: "AVE_pool_mixed_2_pool"
+  type: "Pooling"
+  bottom: "ch_concat_mixed_1_chconcat"
+  top: "AVE_pool_mixed_2_pool"
+  pooling_param {
+    pool: AVE
+    kernel_size: 3
+    stride: 1
+    pad: 1
+  }
+}
+layer {
+  name: "mixed_2_tower_2_conv_conv2d"
+  type: "Convolution"
+  bottom: "AVE_pool_mixed_2_pool"
+  top: "mixed_2_tower_2_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 64
+    bias_term: false
+    pad: 0
+    kernel_size: 1
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_2_tower_2_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_2_tower_2_conv_conv2d"
+  top: "mixed_2_tower_2_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_2_tower_2_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_2_tower_2_conv_conv2d_bn"
+  top: "mixed_2_tower_2_conv_conv2d_relu"
+}
+```
+
+以下为inception模块变形二的描述。
+
+```
+layer {
+  name: "mixed_9_conv_conv2d"
+  type: "Convolution"
+  bottom: "ch_concat_mixed_8_chconcat"
+  top: "mixed_9_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 320
+    bias_term: false
+    pad: 0
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    kernel_h: 1
+    kernel_w: 1
+  }
+}
+layer {
+  name: "mixed_9_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_conv_conv2d"
+  top: "mixed_9_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_9_conv_conv2d_bn"
+  top: "mixed_9_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_9_tower_conv_conv2d"
+  type: "Convolution"
+  bottom: "ch_concat_mixed_8_chconcat"
+  top: "mixed_9_tower_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 384
+    bias_term: false
+    pad: 0
+    kernel_size: 1
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_9_tower_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_tower_conv_conv2d"
+  top: "mixed_9_tower_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_tower_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_9_tower_conv_conv2d_bn"
+  top: "mixed_9_tower_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_9_tower_mixed_conv_conv2d"
+  type: "Convolution"
+  bottom: "mixed_9_tower_conv_conv2d_relu"
+  top: "mixed_9_tower_mixed_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 384
+    bias_term: false
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    pad_h: 0
+    pad_w: 1
+    kernel_h: 1
+    kernel_w: 3
+  }
+}
+layer {
+  name: "mixed_9_tower_mixed_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_tower_mixed_conv_conv2d"
+  top: "mixed_9_tower_mixed_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_tower_mixed_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_9_tower_mixed_conv_conv2d_bn"
+  top: "mixed_9_tower_mixed_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_9_tower_mixed_conv_1_conv2d"
+  type: "Convolution"
+  bottom: "mixed_9_tower_conv_conv2d_relu"
+  top: "mixed_9_tower_mixed_conv_1_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 384
+    bias_term: false
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    pad_h: 1
+    pad_w: 0
+    kernel_h: 3
+    kernel_w: 1
+  }
+}
+layer {
+  name: "mixed_9_tower_mixed_conv_1_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_tower_mixed_conv_1_conv2d"
+  top: "mixed_9_tower_mixed_conv_1_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_tower_mixed_conv_1_relu"
+  type: "ReLU"
+  bottom: "mixed_9_tower_mixed_conv_1_conv2d_bn"
+  top: "mixed_9_tower_mixed_conv_1_conv2d_relu"
+}
+layer {
+  name: "mixed_9_tower_1_conv_conv2d"
+  type: "Convolution"
+  bottom: "ch_concat_mixed_8_chconcat"
+  top: "mixed_9_tower_1_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 448
+    bias_term: false
+    pad: 0
+    kernel_size: 1
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_9_tower_1_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_tower_1_conv_conv2d"
+  top: "mixed_9_tower_1_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_tower_1_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_9_tower_1_conv_conv2d_bn"
+  top: "mixed_9_tower_1_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_9_tower_1_conv_1_conv2d"
+  type: "Convolution"
+  bottom: "mixed_9_tower_1_conv_conv2d_relu"
+  top: "mixed_9_tower_1_conv_1_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 384
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_9_tower_1_conv_1_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_tower_1_conv_1_conv2d"
+  top: "mixed_9_tower_1_conv_1_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_tower_1_conv_1_relu"
+  type: "ReLU"
+  bottom: "mixed_9_tower_1_conv_1_conv2d_bn"
+  top: "mixed_9_tower_1_conv_1_conv2d_relu"
+}
+layer {
+  name: "mixed_9_tower_1_mixed_conv_conv2d"
+  type: "Convolution"
+  bottom: "mixed_9_tower_1_conv_1_conv2d_relu"
+  top: "mixed_9_tower_1_mixed_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 384
+    bias_term: false
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    pad_h: 0
+    pad_w: 1
+    kernel_h: 1
+    kernel_w: 3
+  }
+}
+layer {
+  name: "mixed_9_tower_1_mixed_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_tower_1_mixed_conv_conv2d"
+  top: "mixed_9_tower_1_mixed_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_tower_1_mixed_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_9_tower_1_mixed_conv_conv2d_bn"
+  top: "mixed_9_tower_1_mixed_conv_conv2d_relu"
+}
+layer {
+  name: "mixed_9_tower_1_mixed_conv_1_conv2d"
+  type: "Convolution"
+  bottom: "mixed_9_tower_1_conv_1_conv2d_relu"
+  top: "mixed_9_tower_1_mixed_conv_1_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 384
+    bias_term: false
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    pad_h: 1
+    pad_w: 0
+    kernel_h: 3
+    kernel_w: 1
+  }
+}
+layer {
+  name: "mixed_9_tower_1_mixed_conv_1_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_tower_1_mixed_conv_1_conv2d"
+  top: "mixed_9_tower_1_mixed_conv_1_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_tower_1_mixed_conv_1_relu"
+  type: "ReLU"
+  bottom: "mixed_9_tower_1_mixed_conv_1_conv2d_bn"
+  top: "mixed_9_tower_1_mixed_conv_1_conv2d_relu"
+}
+layer {
+  name: "AVE_pool_mixed_9_pool"
+  type: "Pooling"
+  bottom: "ch_concat_mixed_8_chconcat"
+  top: "AVE_pool_mixed_9_pool"
+  pooling_param {
+    pool: AVE
+    kernel_size: 3
+    stride: 1
+    pad: 1
+  }
+}
+layer {
+  name: "mixed_9_tower_2_conv_conv2d"
+  type: "Convolution"
+  bottom: "AVE_pool_mixed_9_pool"
+  top: "mixed_9_tower_2_conv_conv2d"
+  param {
+    lr_mult: 1.0
+    decay_mult: 1.0
+  }
+  convolution_param {
+    num_output: 192
+    bias_term: false
+    pad: 0
+    kernel_size: 1
+    stride: 1
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "mixed_9_tower_2_conv_batchnorm"
+  type: "BatchNorm"
+  bottom: "mixed_9_tower_2_conv_conv2d"
+  top: "mixed_9_tower_2_conv_conv2d_bn"
+  batch_norm_param {
+  }
+}
+layer {
+  name: "mixed_9_tower_2_conv_relu"
+  type: "ReLU"
+  bottom: "mixed_9_tower_2_conv_conv2d_bn"
+  top: "mixed_9_tower_2_conv_conv2d_relu"
+}
+```
+
 # 参考文献
 
 * Rethinking the Inception Architecture for Computer Vision, Christian-Szegedy, 2015
 * https://github.com/intel/caffe
+* http://ethereon.github.io/netscope/#/editor
 
 
