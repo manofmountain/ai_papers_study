@@ -1,0 +1,174 @@
+Title         : 经典分类CNN模型系列其六：Inception v4与Inception-Resnet v1/v2
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+Inception系列模型设计的核心思想讲至Inception v3基本已经尽了。但2015年Resnet的提出及其在ILSVRC 2015的成功使得Google team开始重新评估CNN深度模型的设计。他们自然不肯屈服于Resnet的强大，同行相轻，古今中外皆然，Googlers们也不能免。
+
+他们试着将Residual learning的思想应用在inception网络中，搞出了性能不错的Inception-Resnet v1/v2模型，实验结果表明Residual learning在Inception网络上确实可行，就此他们似乎可以拱手认输了。认输？岂有此理，自视甚高的Googlers们才不干呢。他们做尽实验，费力表明Residual learning并非深度网络走向更深的必需条件，其只是可以使得深度网络的训练速度加快而已。为了表明这一点，他们更是造出了更为复杂、精巧的Inception v4网络，在不使用residual learning的情况下也达到了与Inception-Resnet v2近似的精度。
+
+Inception v4乃至Google team之前搞出来的v3确实强大，理论上的计算所需Flops及训练参数占的内存开销都不算大（在拥有相同能力的情况下）。可相对于Resnet/VGG等网络而言，它显得有些过于复杂、精巧了。对于实际在底层做优化执行的工程师而言（不论是在GPU/CPU上做还是使用FPGA/ASIC专用芯片），过于复杂的网络往往意味着更多的工程设计与思考才能使得其运算得到优良的并行加速、执行。因此当下为止Resnet系列的分类网络还是主流所用的视觉分类网络。
+
+# Inception v4
+
+inception v4网络的设计主要沿用了之前在Inception v2/v3中提到的几个CNN网络设计原则（详情请参考上篇inception v2/v3博客）。而因为Google team此次将v4网络执行迁移到了tensorflow上面来执行，因此可不必再像之前在DistBelief上那样受限于他们所用系统的内存、计算等局限而只在几种可行的范围里选择inception 通用模块设计。简单说就是Tensorflow 框架可让他们更好地放飞自我，利用tensorflow天生的并行性，随需地设计data parallel与model parallel的网络（当然也还会受限于底层所用硬件的计算与内存资源）。
+
+这篇paper中图片非常多，下面我们就一一看下图，见识下inception v4中新引入的一些模块形状及其间的连接设计吧。
+
+首先在inception网络设计中，最开始的几层总是不建议使用inception等模块来节省计算以抽取信息的，因此它们多是只采用简单的conv层或者相对简单的inception模块。
+
+![应用于Inception_v4与Inception-Resnet网络上的输入模块]
+
+[应用于Inception_v4与Inception-Resnet网络上的输入模块]: images/-Inception_v4-Inception-Resnet-.JPG "应用于Inception_v4与Inception-Resnet网络上的输入模块" { width:auto; max-width:90% }
+
+
+下面为inception v4之上的各个不同大小的feature map grid所使用的inception模块及它们之间的连接。细看就会发现它的设计也主要遵循之前在inception v3中所使用的原则，只是更复杂了些。
+
+![应用于Inception_v4的inception模块及其之间的连接]
+
+[应用于Inception_v4的inception模块及其之间的连接]: images/-Inception_v4-inception-.JPG "应用于Inception_v4的inception模块及其之间的连接" { width:auto; max-width:90% }
+
+汇合以上各个模块就是下图所示最终的Inception v4网络。
+
+![Inception_v4网络]
+
+[Inception_v4网络]: images/Inception_v4-.JPG "Inception_v4网络" { width:auto; max-width:90% }
+
+# Inception-Resnet
+
+在inception-resnet中所用的inception-resnet模块里都在inception子网络的最后加入了一个1x1扩展conv 操作用于使得它的输出宽度（channels数目）与子网络的输入宽度相同，从而方便相加。
+
+## inception-resnet v1
+
+inception-resnet v1网络主要被用来与inception v3模型性能进行比较。因此它所用的inception子网络的计算相对常规inception模块有所减少，这是为了保证使得它的整体计算/内存开销与inception v3近似，如此才能保证比较的公平性（毕竟Googler们的观点是：CNN深度网络的设计是追求计算与内存受限的情况下的性能最优化）。
+
+下图中右、下方三小图分别为inception-resnet v1中所用的inception-resnet modules及它们之间的连接模块。包含了inception-resnet A/inception-resnet B及inception-resnet B与inception-resnet C之间的连接。
+
+![Inception-Resnet_v1所使用的模块]
+
+[Inception-Resnet_v1所使用的模块]: images/Inception-Resnet_v1-.JPG "Inception-Resnet_v1所使用的模块" { width:auto; max-width:90% }
+
+下图为inception-resnet v1中用的inception-resnet C模块。
+
+![Inception-Resnet_v1所用的C模块]
+
+[Inception-Resnet_v1所用的C模块]: images/Inception-Resnet_v1-C-.JPG "Inception-Resnet_v1所用的C模块" { width:auto; max-width:90% }
+
+最后下面为inception-resnet v1的网络输入模块，注意它与inception v4和inception-resnet v2的并不相同。
+
+![Inception-Resnet_v1网络输入模块]
+
+
+## inception-resnet v2
+
+相对于inception-resnet v1而言，v2主要被设计来探索residual learning用于inception网络时所极尽可能带来的性能提升。因此它所用的inception 子网络并没有像v1中用的那样偷工减料。
+
+
+首先下面为inception-resnet v2所使用的各个主要模块。
+
+![Inception-Resnet_v2所使用的各个主要模块]
+
+[Inception-Resnet_v2所使用的各个主要模块]: images/Inception-Resnet_v2-.JPG "Inception-Resnet_v2所使用的各个主要模块" { width:auto; max-width:90% }
+
+最后下面为inception-resnet v1/v2网络的整体结构。
+
+![Inception-resnet_v1与inception-resnet_v2的主体网络结构]
+
+[Inception-resnet_v1与inception-resnet_v2的主体网络结构]: images/Inception-resnet_v1-inception-resnet_v2-.JPG "Inception-resnet_v1与inception-resnet_v2的主体网络结构" { width:auto; max-width:90% }
+
+
+## residual模块的scaling
+
+作者们实验发现如果对inception-resnet网络中的residual模块的输出进行scaling（如以0.1-0.3），那么可以让它的整个训练过程更加地稳定。如下图为scaling的具体做法示意。
+
+![Residuals模块的scaling操作]
+
+[Residuals模块的scaling操作]: images/Residuals-scaling-.JPG "Residuals模块的scaling操作" { width:auto; max-width:90% }
+
+
+# 实验结果
+
+下图为inception v3/v4与inception-resnet v1/v2模型的收敛速度对比图。从中我们可以看出residual learning的引入可以使得inception网络收敛速度更快，但最终它们达到的精度却类似。
+
+![inception系列模型与inception-resnet系列模型的收敛趋势图对比]
+
+[inception系列模型与inception-resnet系列模型的收敛趋势图对比]: images/inception-inception-resnet-.JPG "inception系列模型与inception-resnet系列模型的收敛趋势图对比" { width:auto; max-width:90% }
+
+最后我们看下几个模型的分类精度对比。
+
+![五个分类模型的结果对比]
+
+[五个分类模型的结果对比]: images/-.JPG "五个分类模型的结果对比" { width:auto; max-width:90% }
+
+# 代码分析
+
+我们可以在tensorflow的官方github里面找到Inception系列及inception-resnet系列模型的实现。
+不得不说tensorflow给的API写起CNN网络来还是比较方便的，代码非常可读。
+
+首先是inception v4里的一些实现。可参考：https://github.com/tensorflow/models/blob/master/research/slim/nets/inception_v4.py
+
+以下为block b的实现，非常易懂。
+
+```
+def block_inception_b(inputs, scope=None, reuse=None):
+  """Builds Inception-B block for Inception v4 network."""
+  # By default use stride=1 and SAME padding
+  with slim.arg_scope([slim.conv2d, slim.avg_pool2d, slim.max_pool2d],
+                      stride=1, padding='SAME'):
+    with tf.variable_scope(scope, 'BlockInceptionB', [inputs], reuse=reuse):
+      with tf.variable_scope('Branch_0'):
+        branch_0 = slim.conv2d(inputs, 384, [1, 1], scope='Conv2d_0a_1x1')
+      with tf.variable_scope('Branch_1'):
+        branch_1 = slim.conv2d(inputs, 192, [1, 1], scope='Conv2d_0a_1x1')
+        branch_1 = slim.conv2d(branch_1, 224, [1, 7], scope='Conv2d_0b_1x7')
+        branch_1 = slim.conv2d(branch_1, 256, [7, 1], scope='Conv2d_0c_7x1')
+      with tf.variable_scope('Branch_2'):
+        branch_2 = slim.conv2d(inputs, 192, [1, 1], scope='Conv2d_0a_1x1')
+        branch_2 = slim.conv2d(branch_2, 192, [7, 1], scope='Conv2d_0b_7x1')
+        branch_2 = slim.conv2d(branch_2, 224, [1, 7], scope='Conv2d_0c_1x7')
+        branch_2 = slim.conv2d(branch_2, 224, [7, 1], scope='Conv2d_0d_7x1')
+        branch_2 = slim.conv2d(branch_2, 256, [1, 7], scope='Conv2d_0e_1x7')
+      with tf.variable_scope('Branch_3'):
+        branch_3 = slim.avg_pool2d(inputs, [3, 3], scope='AvgPool_0a_3x3')
+        branch_3 = slim.conv2d(branch_3, 128, [1, 1], scope='Conv2d_0b_1x1')
+      return tf.concat(axis=3, values=[branch_0, branch_1, branch_2, branch_3])
+```
+
+然后我们可以看下inception-resnet v2的模型实现，可见：https://github.com/tensorflow/models/blob/master/research/slim/nets/inception_resnet_v2.py
+
+下面为它在feature map size为17x17的block上的具体写法。其它模块类似。可以看出它对inception子网络的输出使用了scaling操作以加强训练时的稳定性。
+
+```
+def block17(net, scale=1.0, activation_fn=tf.nn.relu, scope=None, reuse=None):
+  """Builds the 17x17 resnet block."""
+  with tf.variable_scope(scope, 'Block17', [net], reuse=reuse):
+    with tf.variable_scope('Branch_0'):
+      tower_conv = slim.conv2d(net, 192, 1, scope='Conv2d_1x1')
+    with tf.variable_scope('Branch_1'):
+      tower_conv1_0 = slim.conv2d(net, 128, 1, scope='Conv2d_0a_1x1')
+      tower_conv1_1 = slim.conv2d(tower_conv1_0, 160, [1, 7],
+                                  scope='Conv2d_0b_1x7')
+      tower_conv1_2 = slim.conv2d(tower_conv1_1, 192, [7, 1],
+                                  scope='Conv2d_0c_7x1')
+    mixed = tf.concat(axis=3, values=[tower_conv, tower_conv1_2])
+    up = slim.conv2d(mixed, net.get_shape()[3], 1, normalizer_fn=None,
+                     activation_fn=None, scope='Conv2d_1x1')
+
+    scaled_up = up * scale
+    if activation_fn == tf.nn.relu6:
+      # Use clip_by_value to simulate bandpass activation.
+      scaled_up = tf.clip_by_value(scaled_up, -6.0, 6.0)
+
+    net += scaled_up
+    if activation_fn:
+      net = activation_fn(net)
+  return net
+```
+
+# 参考文献
+
+* Inception-v4, Inception-ResNet and the Impact of Residual Connections on Learning, Christian-Szegedy, 2016
+* https://github.com/tensorflow/models/blob/master/research/slim/nets
