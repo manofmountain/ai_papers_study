@@ -1,0 +1,206 @@
+Title         : SSD目标检测模型的回响：DSSD
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+SSD模型2015年出来后，端到端的目标检测模型发展盛行一时。随后的Yolo v2更是将它在工业界里视觉领域的应用提高到了一个新的程度。
+
+当下在视觉目标检测领域俨然已是山头林立。Facebook与微软的一众大佬还在沿着当初的R-CNN系列模型一直发展，并进化到了当下性能及速率均较突出的R-FCN及RetinaNet模型（当然相对速度，他们最重视的还是性能）。而Redmon孤军奋战却也不甘示弱，他所领军的Yolo系列模型已经进化到了先进的Yolo v3（这一派相当而言更重视速率而非性能）。SSD的发起者Liu, Wei则坚定地发展着SSD，并一直试图走中间路线，在目标检测的性能与速率之间寻一平衡。对致力于计算机视觉目标检测任务的很多公司、研究者而言，走中间路线的SSD系列模型或者是比较不错的选择。
+
+DSSD模型是SSD模型的继续发展。它也来自于Amazon实习生的一个项目。大的深度学习方面的创新已经越来越多地在青年学者手中产生，真是未可欺年少啊！
+
+# DSSD模型概览
+
+DSSD相当原来的SSD模型主要作了两大更新。一是替换掉VGG，而改用了Resnet-101作为特征提取网络并在对不同尺度feature maps提取特征时使用了更新的检测单元；二则在网络的最后端使用了多个deconvolution layer以有效地扩展低维度信息的contextual information，从而有效地提高了小尺度目标的检测（在我看来2018年提出的FPN的真正思想正是源自于此）。
+
+下图为DSSD模型与SSD模型的整体网络结构对比。
+
+![DSSD与SSD网络结构对比]
+
+[DSSD与SSD网络结构对比]: images/DSSD-SSD-.JPG "DSSD与SSD网络结构对比" { width:auto; max-width:90% }
+
+# DSSD详述
+
+DSSD网络是基于原来的SSD网络作的拓展模型，因此我们想了解它可重点关注它相当于SSD模型不同的地方。
+
+## 使用Resnet-101而非VGG
+
+为了改进目标检测模型，进一步提升其检测精度，作者首先考虑使用更强大的Resnet-101来代替之前在SSD中使用的VGG作为模型的特征提取网络。
+同样在经典的Resnet-101模型后端添加了一些Residual模块以来加强原来模型的特征表达（这已经是当下使用CNN网络来获取有表达力特征组合的一个经典手段了）。作者从conv5_x的后端开始添加多余的Residual模块，然后使用conv3_x/conv5_x及后添加的一些模块输出的feature maps来预测boxes的scores及box offsets等。
+
+![VGG和Resnet中选取的特征层]
+
+[VGG和Resnet中选取的特征层]: images/VGG-Resnet-.JPG "VGG和Resnet中选取的特征层" { width:auto; max-width:90% }
+
+
+经过以上这些简单的替换，最终Resnet-101 based的SSD模型在VOC2007上的mAP达到了76.4%，尚不及原来VGG based的SSD模型的mAP值（为77.5%）。
+
+后来作者改进了基于feature maps组合值来预测box 类别分布及位置偏离信息的模块，从而使得mAP值获得了较大的提升。
+
+## 新的预测模块
+
+在原来SSD模型中，采用了直接使用3x3的conv来在feature maps组合上进行预测的办法。而MS—CNN一文中作者有证据表明若改进具体的子网络会有效提高整体的模型检测精度，因此作者沿用此一方法，试着对每个需要预测的feature maps先使用residual模块进行处理，然后再基于此进行box分值预测。
+
+如下图中能看出作者尝试过的三种改进后的预测模块及与SSD中所使用的简单模块之间的对比。最终效果最优的为c/d两个模块，而c更是在与d的对比中因计算量少而取胜。所以在最终的DSSD模型中，作者采用了c这种预测模块来加强在feature maps之上的目标预测。
+
+![目标预测模块的三种变形及与原来方法的对比]
+
+[目标预测模块的三种变形及与原来方法的对比]: images/-.JPG "目标预测模块的三种变形及与原来方法的对比" { width:auto; max-width:90% }
+
+## 反卷积模块
+
+由上面章节我们已知DSSD的第二个重大创新来自于在模型后端添加了多个反卷积模块来扩大模型在小尺度上的high level特征信息。而这种反卷积输出的feature maps又会与模型前端卷积层的相同尺度（feature map size）的feature maps进行元素级的乘法（element-wise product）来生成相应尺度的feature maps。
+
+下图中可看到某一尺度上反卷积模块的具体实现及其与相同size的卷积模块之间的结合。那么为何使用deconvolution来扩展feature maps size而非直接使用双线性插值以及为何使用元素级乘而非加？答案是作者实验试出来的，后者的结果比前者更好，仅此而已。。原来黑猫白猫之说同样应用于深度学习模型设计，让人啼笑皆非。
+
+![反卷积模块的实现]
+
+## 模型训练
+
+DSSD模型的训练与SSD相似。它也是同SSD一样，需要先将default boxes匹配到对应的groud truth boxes。也是将所有与groud truth boxes具有最大Jaccard overlap或与groud truth的Jaccard overlap大于0.5的boxes视为正样本；然后再基于confidence loss选取一定比例（为3：1）的负样本boxes。计算所用的loss同SSD一样即为反映位置信息的L1 loss及反映类别信息的Softmax loss。
+
+它所采用的data augmentation的方式也与SSD完全一样。
+
+不过在选取default boxes的scale时，它借鉴了Yolo v2中的做法，即对training dataset中已有的ground truth boxes进行聚类分析。然后基于此aspect ratio分布，在原来使用的(1.0,2.0,3.0)三种aspect ratio的default boxes基础上增添了一种即1.6的default box。
+
+![聚类得到的box概率分布]
+
+[聚类得到的box概率分布]: images/-box-.JPG "聚类得到的box概率分布" { width:auto; max-width:90% }
+
+具体训练时，选使用与SSD相似的策略训练出SSD部分的网络，然后再固定下来SSD部分的网络权重，finetune训练deconvolution层的权重。learning rate基本则是按照stepwise的方式过一段时间即进行下调。
+
+## 模型推理
+
+在进行推理时，作者对BN层作了个小的优化即将BN中所用的scale / shift等功能转换到conv中来进行（即对conv中使用的w与b参数进行预处理）。以下图中可看出它在数学上的等价意义。
+
+公式一是原来BN层里的计算。而我们可以通过公式变换将公式一里需要的计算预先在conv层里由公式二、三、四完成。这样就省掉了bn层的计算，可极大地节省计算时间与内存需求。
+
+![Inference时去掉BN层的理论依据]
+
+[Inference时去掉BN层的理论依据]: images/Inference-BN-.JPG "Inference时去掉BN层的理论依据" { width:auto; max-width:90% }
+
+# 实验结果
+
+下表为DSSD模型与其它模型的实验结果对比。
+
+![DSSD与其它模型的实验结果对比]
+
+[DSSD与其它模型的实验结果对比]: images/DSSD-.JPG "DSSD与其它模型的实验结果对比" { width:auto; max-width:90% }
+
+# 代码分析
+
+下面为Resnet-101之后添加数层的代码.
+
+```
+#add extra layers on top of a "base" network (e.g. VGGNet or Inception).
+def AddExtraLayers(net, use_batchnorm=True,
+        lr_mult=1, decay_mult=1, **bn_param):
+
+    use_relu = True
+
+    # Add additional layers to handle atrous effect.
+    last_layer = net.keys()[-1]
+
+    # 32 x 32
+
+    # 16 x 16
+    ResBody(net, last_layer, '6', out2a=256, out2b=256, out2c=1024, stride=2, kernel=2,
+            use_branch1=True, lr_mult=lr_mult, decay_mult=decay_mult, **bn_param)
+    # 8 x 8
+    ResBody(net, 'res6', '7', out2a=256, out2b=256, out2c=1024, stride=2, kernel=2,
+            use_branch1=True, lr_mult=lr_mult, decay_mult=decay_mult, **bn_param)
+    # 4 x 4
+    ResBody(net, 'res7', '8', out2a=256, out2b=256, out2c=1024, stride=2, kernel=2,
+            use_branch1=True, lr_mult=lr_mult, decay_mult=decay_mult, **bn_param)
+    # 2 x 2
+    ResBody(net, 'res8', '9', out2a=256, out2b=256, out2c=1024, stride=2, kernel=2,
+            use_branch1=True, lr_mult=lr_mult, decay_mult=decay_mult, **bn_param)
+    # 1 x 1
+    ResBody(net, 'res9', '10', out2a=256, out2b=256, out2c=1024, stride=2, kernel=2,
+            use_branch1=True, lr_mult=lr_mult, decay_mult=decay_mult, **bn_param)
+
+    return net
+```
+
+以下为deconvolution layer的添加函数。
+
+```
+def AddDeconvLayers(net, forward_layers, use_batchnorm=True):
+    use_relu = True
+    last_layer = net.keys()[-1]
+
+    output_layers = []
+    assert len(forward_layers) == 6, "The number of forward layers should be 6."
+
+    DeconvBNLayer(net, 'res10', 'deconv_9', False, False, 512, 2, 0, 1)
+    name = CombineFeature(net, 'combined_9','deconv_9', forward_layers[0],
+            method=deconv_combine_method)
+    output_layers.append(name)
+
+    #2x2
+    DeconvBNLayer(net, name, 'deconv_8', False, False, 512, 2, 0, 2)
+    name = CombineFeature(net, 'combined_8','deconv_8', forward_layers[1],
+            method=deconv_combine_method)
+    output_layers.append(name)
+
+    #4x4
+    DeconvBNLayer(net, name, 'deconv_7', False, False, 512, 2, 0, 2)
+    name = CombineFeature(net, 'combined_7','deconv_7', forward_layers[2],
+            method=deconv_combine_method)
+    output_layers.append(name)
+
+    #8x8
+    DeconvBNLayer(net, name, 'deconv_6', False, False, 512, 2, 0, 2)
+    name = CombineFeature(net, 'combined_6','deconv_6', forward_layers[3],
+            method=deconv_combine_method)
+    output_layers.append(name)
+
+    #16x16
+    DeconvBNLayer(net, name, 'deconv_5', False, False, 512, 2, 0, 2)
+    name = CombineFeature(net, 'combined_5','deconv_5', forward_layers[4],
+            method=deconv_combine_method)
+    output_layers.append(name)
+
+    # 32x32
+    DeconvBNLayer(net, name, 'deconv_3', False, False, 512,  2, 0, 2)
+    name = CombineFeature(net, 'combined_3','deconv_3', forward_layers[5], method=deconv_combine_method)
+    output_layers.append(name)
+
+    return output_layers[::-1]
+```
+
+以下为deconvolution module的具体实现及它与同尺度convolution feature maps之间的结合。
+
+```
+def CombineFeature(net, name,  deconv_layer, forward_layer, method='EltwiseSUM'):
+    name = '{}_{}'.format(name, method)
+    name_deconv = '{}_pre'.format(deconv_layer)
+    name_forward1 = '{}_pre1'.format(forward_layer)
+    name_forward2 = '{}_pre2'.format(forward_layer)
+
+    ConvBNLayer(net, forward_layer, name_forward1 , True, True, 512,3,1, 1)
+    ConvBNLayer(net, name_forward1, name_forward2 , True, False, 512,3,1, 1)
+    ConvBNLayer(net, deconv_layer, name_deconv , True, False, 512,3,1, 1)
+
+    if method == "EltwiseSUM":
+        net[name] = L.Eltwise(net[name_deconv], net[name_forward2],
+                eltwise_param={'operation':P.Eltwise.SUM})
+    elif method == "EltwisePROD":
+        net[name] = L.Eltwise(net[name_deconv], net[name_forward2],
+                eltwise_param={'operation':P.Eltwise.PROD})
+    else:
+        assert False, "Wrong method name :{}".format(method)
+
+    relu_name = "{}_relu".format(name)
+    net[relu_name] = L.ReLU(net[name])
+
+    return relu_name
+```
+
+# 参考文献
+
+* DSSD : Deconvolutional Single Shot Detector, Cheng-Yang Fu, Wei Liu, 2017
+* https://github.com/zchrissirhcz/caffe-dssd
