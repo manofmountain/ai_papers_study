@@ -1,0 +1,176 @@
+Title         : Resnet的有趣变种：WRN
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+深度学习发展至今，通过增加模型深度来加强模型的表达能力已经成为行业共识。Resnet网络是眼下最为成功，应用最为广泛的一种深度学习模型。Residual block中identity mapping的引入，使得模型可以将深度恣意扩展到很深，它直接将原来的数十层网络伸展到了数百乃至上千层。
+
+不过深度Resnet网络也有潜在的隐忧。虽然说它的模型可通过不断增加深度来获得能力提升（即分类准备性能提高），但愈到后期，靠单纯增加模型层数换来的边际性能提升愈低。
+
+来自巴黎大学的作者试图对Residual learning进行一番透彻的再思考，他们对Residual block的组成，里面的层结构，层数，层宽等进行了广泛的实验，最终他们表明加宽Resnet有时候比加深它带来的边际性能提升要更多。
+
+当然加宽Residual block意味着会带来训练参数数目平方级数目的增加，同时训练参数数目过多也会导致模型易陷入overfitting的陷阱。作者通过在加宽后的Residual block里面插入Dropout层有效地避免了overfitting问题。最后多个数据集上的实验表明他们提出的Wide Residual network (WRN)可取得比那些细高的original Residual network更高的分类精度，同时也拥有着更快的训练速度。
+
+# WRN所设计的一些实验
+
+作者试图对Residual block的功能进行透彻的了解以寻找出一种具有更优表达能力的block。而如果要扩展Residual block的能力一般会从以下三个方面着手。
+
+* 在block里使用更多的Conv层，即enhance 整体网络模型里面的sub-network，局部加深block；
+* 增加Conv的Output channels数目即使用更多的conv filters进行计算，所谓的增宽block；
+* 使用更大的Conv filter size；（因为3x3的filter size已在诸多研究中被证明极其有效，因此作者打算继续使用3x3的conv，并不对这一问题进行更多尝试。）
+
+## Residual block里面使用的conv层次结构
+
+以B(M)来表示Residual block，其中M表示block里所含conv层的kernel size list；比如B(3,1)表示Block里先后包含两个分别为3x3与1x1大小的Conv层。作者不考虑bottleneck模块的使用，因此block里面所有的conv层有着相同的OC(output channels)输出。以下为实验中所考虑的几种block结构。
+
+* B(3;3) - original «basic» block
+* B(3;1;3) - with one extra 1×1 layer
+* B(1;3;1) - with the same dimensionality of all convolutions, «straightened» bottleneck
+* B(1;3) - the network has alternating 1×1 - 3×3 convolutions everywhere
+* B(3;1) - similar idea to the previous block
+* B(3;1;1) - Network-in-Network style block
+
+下图为以上各个结构最终能够获得的分类结果比较（注意在实验时作者为保证训练所用参数相同，因此不同类型block构成的网络的深度会有不同）。可见B(3,3)能取得最好的结果，这也证明了常用Residual block的有效性。B(3,1,3)与B(3,1)性能略差，但速度却更快。接下来的实验中，作者保持了使用B(3,3)这种Residual block结构。
+
+![不同Residual_block内部表示所具有的结果对比]
+
+[不同Residual_block内部表示所具有的结果对比]: images/-Residual_block-.JPG "不同Residual_block内部表示所具有的结果对比" { width:auto; max-width:90% }
+
+## Residual block中的conv层数
+
+以l表示单个Residual block里面conv层的数目，以d表示整体网络所具有的residual blocks的数目。通过保持整体训练所用参数不变，作者研究、分析了residual block内conv层数目不同所带来的性能结果差异。结果可见下图，从中我们能够看出residual block里面包含2个conv层可带来最优的分类结果性能。
+
+![单个Residual_block内不同conv层数对性能的影响]
+
+[单个Residual_block内不同conv层数对性能的影响]: images/-Residual_block-conv-.JPG "单个Residual_block内不同conv层数对性能的影响" { width:auto; max-width:90% }
+
+## Residual block内宽度
+
+以k来表示Residual block的宽度因子，并以k=1作为原始resnet网络中的宽度。通过增加k来加宽residual blocks，并保持整体可训练参数数目不变，作者进行了广泛的实验。结果表明加大Resnet的宽度可带来比加大其深度更大的边际性能提升。具体结果可见下图。
+
+![Residual_block宽度对模型性能的影响]
+
+[Residual_block宽度对模型性能的影响]: images/Residual_block-.JPG "Residual_block宽度对模型性能的影响" { width:auto; max-width:90% }
+
+## Residual block中Dropout的引入
+
+一味加宽Residual block势必会带来训练参数的激增，为了避免模型陷入过拟合的陷阱，作者试着在Residual block中引入了dropout。另外作者实验表明将Dropout加入在conv层之后比加入在identity mapping连接上可带来更好的效果。因此这里引入的Dropout被放在了Conv出来后的ReLu之后。下图中的结果反映出了Dropout带来的性能提升。
+
+![Dropout引入对性能的影响]
+
+[Dropout引入对性能的影响]: images/Dropout-.JPG "Dropout引入对性能的影响" { width:auto; max-width:90% }
+
+# 实验结果
+
+下图反映了与传统的细高Resnet相比，矮胖WRN可具有更好的精度，并且在训练的全程中保持着对Resnet的碾压态势。
+
+![深度Resnet与WRN之间的训练过程比较]
+
+[深度Resnet与WRN之间的训练过程比较]: images/-Resnet-WRN-.JPG "深度Resnet与WRN之间的训练过程比较" { width:auto; max-width:90% }
+
+下图则反映了WRN中所使用的大Tensor计算更有益于GPU计算能力的发挥。
+
+![WRN相对传统Resnet在计算速率上的优势]
+
+[WRN相对传统Resnet在计算速率上的优势]: images/WRN-Resnet-.JPG "WRN相对传统Resnet在计算速率上的优势" { width:auto; max-width:90% }
+
+# 代码分析
+
+以下为作者在Torch框架上实现的构建WRN的过程。我们可看到作者Residual block里面的基本结构是BN -> ReLU -> Conv. 而如果需要加入Dropout的话则是BN -> ReLU -> Dropout -> Conv.
+
+```
+local function createModel(opt)
+   assert(opt and opt.depth)
+   assert(opt and opt.num_classes)
+   assert(opt and opt.widen_factor)
+
+   local function Dropout()
+      return nn.Dropout(opt and opt.dropout or 0,nil,true)
+   end
+
+   local depth = opt.depth
+
+   local blocks = {}
+
+   local function wide_basic(nInputPlane, nOutputPlane, stride)
+      local conv_params = {
+         {3,3,stride,stride,1,1},
+         {3,3,1,1,1,1},
+      }
+      local nBottleneckPlane = nOutputPlane
+
+      local block = nn.Sequential()
+      local convs = nn.Sequential()
+
+      for i,v in ipairs(conv_params) do
+         if i == 1 then
+            local module = nInputPlane == nOutputPlane and convs or block
+            module:add(SBatchNorm(nInputPlane)):add(ReLU(true))
+            convs:add(Convolution(nInputPlane,nBottleneckPlane,table.unpack(v)))
+         else
+            convs:add(SBatchNorm(nBottleneckPlane)):add(ReLU(true))
+            if opt.dropout > 0 then
+               convs:add(Dropout())
+            end
+            convs:add(Convolution(nBottleneckPlane,nBottleneckPlane,table.unpack(v)))
+         end
+      end
+      local shortcut = nInputPlane == nOutputPlane and
+         nn.Identity() or
+         Convolution(nInputPlane,nOutputPlane,1,1,stride,stride,0,0)
+      return block
+         :add(nn.ConcatTable()
+            :add(convs)
+            :add(shortcut))
+         :add(nn.CAddTable(true))
+   end
+
+   -- Stacking Residual Units on the same stage
+   local function layer(block, nInputPlane, nOutputPlane, count, stride)
+      local s = nn.Sequential()
+
+      s:add(block(nInputPlane, nOutputPlane, stride))
+      for i=2,count do
+         s:add(block(nOutputPlane, nOutputPlane, 1))
+      end
+      return s
+   end
+
+   local model = nn.Sequential()
+   do
+      assert((depth - 4) % 6 == 0, 'depth should be 6n+4')
+      local n = (depth - 4) / 6
+
+      local k = opt.widen_factor
+      local nStages = torch.Tensor{16, 16*k, 32*k, 64*k}
+
+      model:add(Convolution(3,nStages[1],3,3,1,1,1,1)) -- one conv at the beginning (spatial size: 32x32)
+      model:add(layer(wide_basic, nStages[1], nStages[2], n, 1)) -- Stage 1 (spatial size: 32x32)
+      model:add(layer(wide_basic, nStages[2], nStages[3], n, 2)) -- Stage 2 (spatial size: 16x16)
+      model:add(layer(wide_basic, nStages[3], nStages[4], n, 2)) -- Stage 3 (spatial size: 8x8)
+      model:add(SBatchNorm(nStages[4]))
+      model:add(ReLU(true))
+      model:add(Avg(8, 8, 1, 1))
+      model:add(nn.View(nStages[4]):setNumInputDims(3))
+      model:add(nn.Linear(nStages[4], opt.num_classes))
+   end
+
+   utils.DisableBias(model)
+   utils.testModel(model)
+   utils.MSRinit(model)
+   utils.FCinit(model)
+   -- model:get(1).gradInput = nil
+
+   return model
+end
+
+return createModel
+```
+
+# 参考文献
+
+* Wide Residual Networks, Sergey-Zagoruyko, 2017
+* https://github.com/szagoruyko/wide-residual-networks
