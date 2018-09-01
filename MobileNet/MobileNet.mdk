@@ -20,7 +20,9 @@ MobileNet属于上面说的第二种方法。
 
 ## Depthwise和Pointwise组成的新卷积结构
 
+![Depthwise和Pointwise构成的新卷积结构]
 
+[Depthwise和Pointwise构成的新卷积结构]: images/Depthwise-Pointwise-.JPG "Depthwise和Pointwise构成的新卷积结构" { width:auto; max-width:90% }
 
 首先我们介绍一个典型的卷积计算结构。假设其输入为D~F~ x D~F~ x M的feature map，这里D~F~为输入feature map的长、宽（简单考虑假设长宽相同），M则为input channels数目；然后假设它的输出为D~G~ x D~G~ x N的feature map，这里D~G~为输出feature map的长、宽大小，N则为output channels数目。这样的一个典型conv结构的kernel通常为D~K~ x D~k~ x M x N。 
 它的输出与输入之间的计算公式如下：
@@ -45,14 +47,28 @@ G(k,l,m) = \sum_{i,j} \left( K(i,j,m) * F(k+i-1,l+j-1,m) \right)
 
 最终这种由Depthwise与Pointwise组合起来的新conv结构的总计算复杂度为：D~k~ * D~k~ * M * D~F~ * D~F~ + D~F~ * D~F~ * M * N。
 
-通过与典型conv操作的计算复杂度相比，如下：
+通过与典型conv操作的计算复杂度相比，如下。可看出新的conv结构可节省大量计算与参数。
+
+![新卷积节省计算复杂度的计算公式]
+
+[新卷积节省计算复杂度的计算公式]: images/-.JPG "新卷积节省计算复杂度的计算公式" { width:auto; max-width:90% }
 
 
 ## MobileNet网络构成
 
 下图为Depthwise与Pointwise组成的新卷积结构的层次组合表示。
 
+![Depthwise与pointwise构成的卷积的结果]
+
+[Depthwise与pointwise构成的卷积的结果]: images/Depthwise-pointwise-.JPG "Depthwise与pointwise构成的卷积的结果" { width:auto; max-width:90% }
+
+
 下图为MobileNet的网络构成。它的95%的时间是在1x1 conv层上消耗的，另外1x1的conv参数也占了所有可训练参数的75%。
+
+![MobileNet主网络框架]
+
+[MobileNet主网络框架]: images/MobileNet-.JPG "MobileNet主网络框架" { width:auto; max-width:90% }
+
 
 ## MobileNet训练
 
@@ -70,12 +86,22 @@ Googlers们使用RMSprop+Async gradient更新的方式进行网络训练。作�
 
 下面两表中反映了施加alpha与beta等缩减参数对最终模型分类精度及计算与内存开销的影响。
 
+![Alpha与Beta可带来的计算与内存开销的缩减]
+
+[Alpha与Beta可带来的计算与内存开销的缩减]: images/Alpha-Beta-.JPG "Alpha与Beta可带来的计算与内存开销的缩减" { width:auto; max-width:90% }
+
+![Apha_beta 对分类结果影响及计算开销]
+
+[Apha_beta 对分类结果影响及计算开销]: images/Apha_beta-.JPG "Apha_beta 对分类结果影响及计算开销" { width:auto; max-width:90% }
+
+
 # 实验结果
 
 下表中我们可看出MobileNet与其它流行模型像VGG/Inception之间的比较。可以看出它在减少巨大计算及内存开销的同时，分类精度表现不俗。
 
-# 代码分析
+![MobileNet与其它流行模型之间的结果比较]
 
+# 代码分析
 
 以下为它训练时的基本配置参量。
 
