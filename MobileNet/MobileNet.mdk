@@ -1,0 +1,240 @@
+Title         : 精简CNN模型系列之一：MobileNet
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+深度学习的飞速发展重新唤起了吃瓜群众们对未来高阶段人工智能大规模使用带来新的生产力巨大跃升这一美好前途的憧憬。
+
+可事实情况是我们搞CNN的专家们为了拼命追求准确率已经越来越痴迷于构建层次更深、参数更多、计算结构更复杂的网络（突然想到了那些活跃在厉害国各个角落忙着大兴土木，热火朝天搞建设的人民工仆们，他们似乎对GDP也异常执着，一点也不亚于AI experts们对CNN分类准确率的追求。至于造出来的大楼，公路，商场是否有人住已经不管了，他们想的是如何让东西显得漂亮，足够得高端、大气、上档次以显得自己领导有方，政绩显著。。呃，跑题了好像。。）
+
+想想自Alexnet以来，我们相继又有了VGG/Googlenet/Resnet，网络层数、训练参数是一路高歌猛进。Resnet系列网络更是一度将CNN层数狂飙到上千层（真是人有多大胆，CNN就敢有多少层啊）。。可这些实验室里孵化出的网络一旦部署到生产实际当中就会遇到种种意想不到的困难。首先网络算起来太慢，尤其对于本身计算资源有效的移动设备（如手机/Pad）而言。设想我们拍了张照片，然后让带有AI驱动的APP帮我们识别出照片上都有些什么东西，结果它思考个十几秒钟，才给我们慢吞吞地返回个准确率只有60%的结果，并稍带着将我们手机上已有的电量耗了一半，这样的APP你会用吗？另外这些复杂CNN网络往往有着庞大的可训练参数需要我们部署时一并输入到内存当中，对于本身内存就不大的移动设备而言，内存被爆仓机率比炒A股来得还要高些，想象一下有这么个神奇的APP，我们使用十次会导致手机崩溃、重启个三、四次，幸免于难的那几次还会让你感觉手机奇慢无比，体验差得让人恨不得也想像“昆山龙哥”那样拿刀出去挥挥（当然出门前保险买好）。。这样的APP你会想用吗？
+
+总之，精减CNN网络是这么一种更为实际的想法。那就是让CNN的强大跟具体的生产实际结合起来，让它变得更切实、可用。目前大致有两类方法，一种是得到原生CNN网络的训练权重后，在真正进行模型部署时进行模型结构（Pruning）或权重参数（Compression）精减以使得我们能够以一种现实能接受的方式进行模型推理；另外一种则是直接训练出一种计算复杂度更低、训练参数更少的网络以满足实际生产环境部署的需求。
+
+MobileNet属于上面说的第二种方法。
+
+# MobileNet结构
+
+## Depthwise和Pointwise组成的新卷积结构
+
+
+
+首先我们介绍一个典型的卷积计算结构。假设其输入为D~F~ x D~F~ x M的feature map，这里D~F~为输入feature map的长、宽（简单考虑假设长宽相同），M则为input channels数目；然后假设它的输出为D~G~ x D~G~ x N的feature map，这里D~G~为输出feature map的长、宽大小，N则为output channels数目。这样的一个典型conv结构的kernel通常为D~K~ x D~k~ x M x N。 
+它的输出与输入之间的计算公式如下：
+
+~ Equation
+G(k,l,n) = \sum_{i,j,m} \left( K(i,j,m,n) * F(k+i-1,l+j-1,m) \right)
+~
+
+它的计算消耗为：D~k~ * D~k~ * M * N * D~F~ * D~F~。
+
+然后我们再看下Depthwise与Pointwise conv所组成的新的卷积结构。首选Depthwise与Pointwise都是conv操作，尤其是Pointwise更是典型的1x1 conv操作。Depthwise conv则是一种一个input channel对应一个conv filter进行卷积的操作，显然它输出的output channels数目与input channels数目也会相等。Pointwise conv在Depthwise conv操作之后进行，它使用1x1的conv来将之前的IC(input channels)个feature maps进行融合，整理最终输出OC(Output channels)个特征的feature maps。
+
+这样Depthwise的计算公式为：
+
+~ Equation
+G(k,l,m) = \sum_{i,j} \left( K(i,j,m) * F(k+i-1,l+j-1,m) \right)
+~
+
+它的计算复杂度为: D~k~ * D~k~ * M * D~F~ * D~F~。
+
+而Pointwise的计算复杂度则为：D~F~ * D~F~ * M * N。
+
+最终这种由Depthwise与Pointwise组合起来的新conv结构的总计算复杂度为：D~k~ * D~k~ * M * D~F~ * D~F~ + D~F~ * D~F~ * M * N。
+
+通过与典型conv操作的计算复杂度相比，如下：
+
+
+## MobileNet网络构成
+
+下图为Depthwise与Pointwise组成的新卷积结构的层次组合表示。
+
+下图为MobileNet的网络构成。它的95%的时间是在1x1 conv层上消耗的，另外1x1的conv参数也占了所有可训练参数的75%。
+
+## MobileNet训练
+
+Googlers们使用RMSprop+Async gradient更新的方式进行网络训练。作者发现像Mobilenet这么小的模型不大适宜使用过多的Regularization操作（因为它可训练参数不多，不大容易出现过拟合的情况）。为此他们在进行训练时并没有使用像inception v3中那样的side head/smooth labeling及过多的image data augmentations等操作。
+
+## Width_multiplier: Thinner models
+
+作者试图在节省计算与accuracy之间寻找平衡，为此他们使用alpha参数来调节每层的宽度，它可用来影响input channels M及output channels N的数目。若施加了alpha参数，那么在真正计算时所用的M与N将分别为alpha x M与alpha x N。它又叫缩减参数。
+
+## Resolution Multiplier: Reduced representation
+
+同样为了节省计算、内存开销的考虑，作者使用了beta参数来调节feature maps的大小，即如果输入或输出feature map本来的长宽为D，那么调整后将为D x beta。
+
+下表中反映了alpha与beta参数可节省的计算及内存资源。
+
+下面两表中反映了施加alpha与beta等缩减参数对最终模型分类精度及计算与内存开销的影响。
+
+# 实验结果
+
+下表中我们可看出MobileNet与其它流行模型像VGG/Inception之间的比较。可以看出它在减少巨大计算及内存开销的同时，分类精度表现不俗。
+
+# 代码分析
+
+
+以下为它训练时的基本配置参量。
+
+```
+flags.DEFINE_string('master', '', 'Session master')
+flags.DEFINE_integer('task', 0, 'Task')
+flags.DEFINE_integer('ps_tasks', 0, 'Number of ps')
+flags.DEFINE_integer('batch_size', 64, 'Batch size')
+flags.DEFINE_integer('num_classes', 1001, 'Number of classes to distinguish')
+flags.DEFINE_integer('number_of_steps', None,
+                     'Number of training steps to perform before stopping')
+flags.DEFINE_integer('image_size', 224, 'Input image resolution')
+flags.DEFINE_float('depth_multiplier', 1.0, 'Depth multiplier for mobilenet')
+flags.DEFINE_bool('quantize', False, 'Quantize training')
+flags.DEFINE_string('fine_tune_checkpoint', '',
+                    'Checkpoint from which to start finetuning.')
+flags.DEFINE_string('checkpoint_dir', '',
+                    'Directory for writing training checkpoints and logs')
+flags.DEFINE_string('dataset_dir', '', 'Location of dataset')
+flags.DEFINE_integer('log_every_n_steps', 100, 'Number of steps per log')
+flags.DEFINE_integer('save_summaries_secs', 100,
+                     'How often to save summaries, secs')
+flags.DEFINE_integer('save_interval_secs', 100,
+                     'How often to save checkpoints, secs')
+```
+以下为它各个层的结果与参数等信息。
+```
+"""
+75% Mobilenet V1 (base) with input size 128x128:
+See mobilenet_v1_075()
+Layer                                                     params           macs
+--------------------------------------------------------------------------------
+MobilenetV1/Conv2d_0/Conv2D:                                 648       2,654,208
+MobilenetV1/Conv2d_1_depthwise/depthwise:                    216         884,736
+MobilenetV1/Conv2d_1_pointwise/Conv2D:                     1,152       4,718,592
+MobilenetV1/Conv2d_2_depthwise/depthwise:                    432         442,368
+MobilenetV1/Conv2d_2_pointwise/Conv2D:                     4,608       4,718,592
+MobilenetV1/Conv2d_3_depthwise/depthwise:                    864         884,736
+MobilenetV1/Conv2d_3_pointwise/Conv2D:                     9,216       9,437,184
+MobilenetV1/Conv2d_4_depthwise/depthwise:                    864         221,184
+MobilenetV1/Conv2d_4_pointwise/Conv2D:                    18,432       4,718,592
+MobilenetV1/Conv2d_5_depthwise/depthwise:                  1,728         442,368
+MobilenetV1/Conv2d_5_pointwise/Conv2D:                    36,864       9,437,184
+MobilenetV1/Conv2d_6_depthwise/depthwise:                  1,728         110,592
+MobilenetV1/Conv2d_6_pointwise/Conv2D:                    73,728       4,718,592
+MobilenetV1/Conv2d_7_depthwise/depthwise:                  3,456         221,184
+MobilenetV1/Conv2d_7_pointwise/Conv2D:                   147,456       9,437,184
+MobilenetV1/Conv2d_8_depthwise/depthwise:                  3,456         221,184
+MobilenetV1/Conv2d_8_pointwise/Conv2D:                   147,456       9,437,184
+MobilenetV1/Conv2d_9_depthwise/depthwise:                  3,456         221,184
+MobilenetV1/Conv2d_9_pointwise/Conv2D:                   147,456       9,437,184
+MobilenetV1/Conv2d_10_depthwise/depthwise:                 3,456         221,184
+MobilenetV1/Conv2d_10_pointwise/Conv2D:                  147,456       9,437,184
+MobilenetV1/Conv2d_11_depthwise/depthwise:                 3,456         221,184
+MobilenetV1/Conv2d_11_pointwise/Conv2D:                  147,456       9,437,184
+MobilenetV1/Conv2d_12_depthwise/depthwise:                 3,456          55,296
+MobilenetV1/Conv2d_12_pointwise/Conv2D:                  294,912       4,718,592
+MobilenetV1/Conv2d_13_depthwise/depthwise:                 6,912         110,592
+MobilenetV1/Conv2d_13_pointwise/Conv2D:                  589,824       9,437,184
+--------------------------------------------------------------------------------
+Total:                                                 1,800,144     106,002,432
+"""
+```
+以下为模型的大致构建过程。当然它只是用来建图的，真正的conv运算或者depthwise conv运算都是在底层C++ code实现的operators上来完成的。
+
+```
+_CONV_DEFS = [
+    Conv(kernel=[3, 3], stride=2, depth=32),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=64),
+    DepthSepConv(kernel=[3, 3], stride=2, depth=128),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=128),
+    DepthSepConv(kernel=[3, 3], stride=2, depth=256),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=256),
+    DepthSepConv(kernel=[3, 3], stride=2, depth=512),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=512),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=512),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=512),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=512),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=512),
+    DepthSepConv(kernel=[3, 3], stride=2, depth=1024),
+    DepthSepConv(kernel=[3, 3], stride=1, depth=1024)
+]
+
+with tf.variable_scope(scope, 'MobilenetV1', [inputs]):
+    with slim.arg_scope([slim.conv2d, slim.separable_conv2d], padding=padding):
+      # The current_stride variable keeps track of the output stride of the
+      # activations, i.e., the running product of convolution strides up to the
+      # current network layer. This allows us to invoke atrous convolution
+      # whenever applying the next convolution would result in the activations
+      # having output stride larger than the target output_stride.
+      current_stride = 1
+
+      # The atrous convolution rate parameter.
+      rate = 1
+
+      net = inputs
+      for i, conv_def in enumerate(conv_defs):
+        end_point_base = 'Conv2d_%d' % i
+
+        if output_stride is not None and current_stride == output_stride:
+          # If we have reached the target output_stride, then we need to employ
+          # atrous convolution with stride=1 and multiply the atrous rate by the
+          # current unit's stride for use in subsequent layers.
+          layer_stride = 1
+          layer_rate = rate
+          rate *= conv_def.stride
+        else:
+          layer_stride = conv_def.stride
+          layer_rate = 1
+          current_stride *= conv_def.stride
+
+        if isinstance(conv_def, Conv):
+          end_point = end_point_base
+          if use_explicit_padding:
+            net = _fixed_padding(net, conv_def.kernel)
+          net = slim.conv2d(net, depth(conv_def.depth), conv_def.kernel,
+                            stride=conv_def.stride,
+                            normalizer_fn=slim.batch_norm,
+                            scope=end_point)
+          end_points[end_point] = net
+          if end_point == final_endpoint:
+            return net, end_points
+
+        elif isinstance(conv_def, DepthSepConv):
+          end_point = end_point_base + '_depthwise'
+
+          # By passing filters=None
+          # separable_conv2d produces only a depthwise convolution layer
+          if use_explicit_padding:
+            net = _fixed_padding(net, conv_def.kernel, layer_rate)
+          net = slim.separable_conv2d(net, None, conv_def.kernel,
+                                      depth_multiplier=1,
+                                      stride=layer_stride,
+                                      rate=layer_rate,
+                                      normalizer_fn=slim.batch_norm,
+                                      scope=end_point)
+
+          end_points[end_point] = net
+          if end_point == final_endpoint:
+            return net, end_points
+
+          end_point = end_point_base + '_pointwise'
+
+          net = slim.conv2d(net, depth(conv_def.depth), [1, 1],
+                            stride=1,
+                            normalizer_fn=slim.batch_norm,
+                            scope=end_point)
+
+          end_points[end_point] = net
+          if end_point == final_endpoint:
+            return net, end_points
+        else:
+          raise ValueError('Unknown convolution type %s for layer %d'
+                           % (conv_def.ltype, i))
+  raise ValueError('Unknown final endpoint %s' % final_endpoint)
+```
+
+# 参考文献
+
+* MobileNets: Efficient Convolutional Neural Networks for Mobile Vision Applications, Andrew-G.-Howard, 2017
+* https://github.com/tensorflow/models/tree/master/research/slim/nets
+* https://github.com/Zehaos/MobileNet
