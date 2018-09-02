@@ -1,0 +1,160 @@
+Title         : 精简CNN模型系列之二：SqueezeNet
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+SqueezeNet同这个系列要介绍的其它任一CNN模型一样不只关心模型分类精度，同样也重视其计算速度与模型体积大小。
+
+作者列举了三项小的CNN模型的优点：
+
+* 可以进行更高效率的分布式训练：在分布式训练中，模型可训练参数变小，意味着用于网络通讯的时间减少，这样整个分布式训练系统就能拥有更高的扩展效率；
+* 可更高效地将新训练模型部署至端侧设备：当下很多AI驱动的APP或Service都需要不断将新训练得到的模型快速自云端部署至用户的客户端，小的CNN模型意味着更少的网络传播需求，进而更有利于新训练模型的频繁部署；
+* 有效的FPGA或其它嵌入设备上的模型部署：因FPGA或其它移动等嵌入设备往往只有很少的片上内存可用（没有或有速度相对很慢的片外内存），因此它们也渴望高准确率同时占内存不多的小CNN模型。
+
+然后在本论文中，作者提出了一种新的Fire module，用于构建整个SqueezeNet网络，最终其能在Imagenet上达到与Alexnet相似的分类准确率，但只需其不到1/50的参数。若再进一步使用当下较为成熟的一些model compression技术进行模型压缩，可以进一步将SqueezeNet的权重大小压缩为Alexnet模型的1/510，只有不到0.5MB。
+
+作者还分析了CNN模型基于准确率与模型大小为优化目标所可以考虑的设计。并基于Fire module与SqueezeNet分别在微观与宏观两个层次上进行了探究。
+
+# SqueezeNet
+
+## 网络架构设计策略
+
+* 将3x3的conv filters替换为1x1的conv filters；
+* 减少输入至3x3 conv layer的feature maps的input channels 数目；
+* 将网络中所需的Downsample操作向后推迟。
+
+以上三项策略中前两个是出于减少模型参数数量考虑，而后一个则是为了提高模型最终的分类准确率。三项策略都有据可考，在此不再详表。
+
+## Fire module
+
+同Googlenet主要由Inception module组成或Resnet主要由Residual learning block组成一样，构成SqueezeNet网络的主要模块是Fire module。
+
+它主要由两部分构成，分别为squeeze layer与expand layer。其中squeeze layer为1x1的conv layer，主要用于将输入此module的input channels数目进行缩减；而expand layer包含1x1的conv layer与3x3的conv layer，主要用于真正的feature maps的特征再融合，再表达。详细的fire module可见下图所示。
+
+![Fire_module]
+
+[Fire_module]: images/Fire_module.JPG "Fire_module" { width:auto; max-width:90% }
+
+在Fire module中作者使用了三个hyper parameters用于表示它的构成。s~1x1~表示squeeze layer filters的数目；e~1x1~表示expand layer中1x1 conv filters的数目，e~3x3~则表示expand layer中3x3 conv filters的数目。因为在每个fire module内部s~1x1~要远小于e~1x1~ + e~3x3~，它们满足s~1x1~ = SR * (e~1x1~ + e~3x3~)。而SR称为缩减系数，在这里只有0.125。
+
+## SqueezeNet网络结构
+
+如下图所示为SqueezeNet的整体网络结构及它的两种加入Residual learning考虑的变形。
+
+![SqueezeNet网络结构]
+
+[SqueezeNet网络结构]: images/SqueezeNet-.JPG "SqueezeNet网络结构" { width:auto; max-width:90% }
+
+它的设计基本follow了在篇初提到的三项准则。下表为它里面的具体参数设置。
+
+![SqueezeNet内部架构详情]
+
+差不多，我们可以从它当中看出来VGG的一些影子。也是随网络加深，downsampling的使用而不断加大fire module输出 channels的数目。同时它为了提高分类准确率而尽量将模型的downsampling操作放在了后面。
+
+## SqueezeNet评估
+
+在下表中，我们能看出通过与Alexnet相比较，SqueezeNet展示了其在使用当下已成熟的model compression技术前后所具有的性能及参数大小优势。它进一步表明了当下较为成熟的像model prunning/model compression/low bit quantization等技术都可用于像SqueezeNet这样的小CNN models。
+
+![SqueezeNet的准确率及参数缩减程序评估]
+
+# CNN微观模块设计考虑
+
+作者有从两个方面对fire module内部的设计结构进行探索。
+
+首先考虑SR（缩减参数）的大小对网络分类性能的影响，以上对其评估时使用的SR为0.125。作者在0.125-1的区间内对其进行线性最优探索。发现开始随着SR增加，最终的网络accuracy确会提升，但其边际提升值却是愈来愈小，另外SR自0.75升至1时accuracy不升反降。
+
+另外作者有考虑expand内部1x1 conv filters与3x3 conv filters的比例分配。发现一味提高3x3 conv所占比例并不能导致模型精度提高，反而是3x3 conv的比例为0.5时，模型精度达到了最大为85.3%。
+
+下图中可见作者的详细实验结果。
+
+![Fire_module微观模块设计探索]
+
+[Fire_module微观模块设计探索]: images/Fire_module-.JPG "Fire_module微观模块设计探索" { width:auto; max-width:90% }
+
+# CNN宏观网络结构设计考虑
+
+作者在原来的SqueezeNet网络中引入了Residual network里面提的by-pass learning的思想。但因为当ic != oc时不能直接使用简单的identity-mapping，因此在某些modules上考虑引入了1x1的conv使得ic == oc。这样作者共设计了两种考虑了residual learning的网络变形。具体网络结构可见上面章节的图中，下图所示则为三种网络结果对比分别具有的accuracy及模型参数大小。
+
+![CNN宏观网络结构设计探索]
+
+[CNN宏观网络结构设计探索]: images/CNN-.JPG "CNN宏观网络结构设计探索" { width:auto; max-width:90% }
+
+# 代码分析
+
+如下所示为一个fire module在caffe中的协议表示。
+
+```
+layer {
+  name: "fire2/squeeze1x1"
+  type: "Convolution"
+  bottom: "pool1"
+  top: "fire2/squeeze1x1"
+  convolution_param {
+    num_output: 16
+    kernel_size: 1
+    weight_filler {
+      type: "xavier"
+    }
+  }
+}
+layer {
+  name: "fire2/relu_squeeze1x1"
+  type: "ReLU"
+  bottom: "fire2/squeeze1x1"
+  top: "fire2/squeeze1x1"
+}
+layer {
+  name: "fire2/expand1x1"
+  type: "Convolution"
+  bottom: "fire2/squeeze1x1"
+  top: "fire2/expand1x1"
+  convolution_param {
+    num_output: 64
+    kernel_size: 1
+    weight_filler {
+      type: "xavier"
+    }
+  }
+}
+layer {
+  name: "fire2/relu_expand1x1"
+  type: "ReLU"
+  bottom: "fire2/expand1x1"
+  top: "fire2/expand1x1"
+}
+layer {
+  name: "fire2/expand3x3"
+  type: "Convolution"
+  bottom: "fire2/squeeze1x1"
+  top: "fire2/expand3x3"
+  convolution_param {
+    num_output: 64
+    pad: 1
+    kernel_size: 3
+    weight_filler {
+      type: "xavier"
+    }
+  }
+}
+layer {
+  name: "fire2/relu_expand3x3"
+  type: "ReLU"
+  bottom: "fire2/expand3x3"
+  top: "fire2/expand3x3"
+}
+layer {
+  name: "fire2/concat"
+  type: "Concat"
+  bottom: "fire2/expand1x1"
+  bottom: "fire2/expand3x3"
+  top: "fire2/concat"
+}
+```
+
+# 参考文献
+
+* SQUEEZENET: ALEXNET-LEVEL ACCURACY WITH 50X FEWER PARAMETERS AND <0.5MB MODEL SIZE, Forrest-N.-Iandola, 2016
+* https://github.com/DeepScale/SqueezeNet
