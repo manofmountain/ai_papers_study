@@ -1,0 +1,615 @@
+Title         : 经典分类CNN模型系列其七：DenseNet
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+传统上为了加强CNN模型的表达能力有两种可行的办法，一是将CNN层数增加，变得越来越深；二则是将单层CNN的conv filters数目增加，变得越来越宽。但这两种都会导致训练参数的倍增，从而滑向overfitting的深渊。
+
+后来Resnet等网络中关于identity mapping的引入，使得我们进一步意识到有效的CNN网络结构设计可以在网络训练参数一定的情况下达到一定的优良性能。
+
+Resnet中通过使用skip learning可有效地将前面layers产生的activation maps传递给后面的layers使用，极大地规避了前向的参数爆炸(exploding)及后向的参数消失(vanishing)等问题。而在DenseNet中，作者进一步考虑加强CNN网络前面layers与后面layers之间的关联，从而设计出了DenseNet网络，以更充分地将后端layers处理得到的feature信息有效地为后面layers所复用，进而使得网络随着层数的增加，逐步在保有原来已得全局feature信息的基础上对其不断增加新的后面layers所产生的features信息。它的设计被实验证明可以有效地复用各layers之间的feature map计算，从而减少每层需用的训练参数。
+
+下图为DenseNet的基本轮廓描述。
+
+![DenseNet基本网络结构描述]
+
+[DenseNet基本网络结构描述]: images/DenseNet-.JPG "DenseNet基本网络结构描述" { width:auto; max-width:90% }
+
+# DenseNet
+
+DenseNet的设计受当下非常流利的Resnet影响很大。它的实际的网络设计结构可于下图得见。
+
+![一个实际的DensNet网络结构]
+
+[一个实际的DensNet网络结构]: images/-DensNet-.JPG "一个实际的DensNet网络结构" { width:auto; max-width:90% }
+
+## Dense connectivity
+
+我们知道Resnet网络的结构可描述为：X~l~ = H~l~(X~l-1~) + X~l-1~。其中X~l~表示第l~th~ layer所产生的feature maps，H~l~则表示第l~th~ layer上所对应的计算（一般为BN+ReLU+Conv等）。
+
+那么与此相对应，DenseNet的网络结构则可描述为：X~l~ = H~l~([X~0~, X~1~, ...., X~l-1~])。其中[X~0~, X~1~,....,X~l-1~]分别表示与l~th~ layer feature map size相同的前面若干个layers所生成的feature maps集合。
+
+可以看出与Resnet相比，DenseNet不只是使用了更前面的一个layer的输入作为后继layer的输入，而是使用了前面所有与它具有同等feature map size的layers。另外DenseNet在使用这些pre layers作为输入时也没有将它们相加（像Resnet那样），而是通过直接简单级连的方式向后传播。
+
+## Composite function
+
+上面章节我们使用的H~l~函数准确讲是一个复合函数集合。在DenseNet中它共包含三个操作分别为BN + ReLu + Conv(3x3)。
+
+## Pooling layers
+
+由上面的图中，我们亦可看出所谓的DenseNet实质上由数个分别为Pooling layers所隔开的Dense blocks所组成。作者在文章中将这些Dense blocks之间的layers称为transition layers。它亦是由三项操作来完成，分别是BN + Conv(1x1) + AvgPool(2x2)。
+
+## Growth rate
+
+如果每个layer分别产生出k个output feature maps，那么第l个layer(H~l~)所对应的输入feature maps应为k~0~ + (l-1) X k。此处k~0~对应着input layer的输入feature maps channels。DenseNet的设计因为能较好进行层与层之间的特征复用，因此并不需要很宽（即每层的可训练参数不需要太多）。一般k可为12。这里k亦称为增加速率(Growth rate)。它决定了每次每个layer可以向全局特征集合中添加多少新鲜的特征。
+
+## Bottleneck layers
+
+虽然Denset blocks中的每个layer只产生k个feature map输出，但它却有着非常多的feature map输入(如上节所讲实为：k~0~ + (l-1) X k)。为此像Resnet/Inception系列/SqueezeNet等网络中做的那样，作者在每层3x3 conv操作前引入了1x1 conv的bottle neck layer，有效地将输入feature maps数量控制在合理的范围内。所以每个layer真正的计算（H~l~）实际为：BN-ReLU-Conv(1x1)-BN-ReLU-Conv(3x3)。
+
+作者将引入了Bottleneck layers的DenseNet称为DenseNet-B，在他们实际的实验中1x1 conv所输出的feature maps数目为4k。
+
+## Compression
+
+类似于MobileNet中所使用的缩减因子，作者在Dense blocks之间的transition layers中也引入了缩减的概念用于减少后须的特征输入数目，从而节省计算及参数，或者更准确说是寻到一种手段能用于在计算/内存开销与最终分类精度之间进行权衡。
+
+方法很简单即在transition layers上所用的1x1 conv上使用了压缩参数theta(0< theta <=1)。这样前一个dense block假设共生成出m个featue maps，那么经过此带有压缩功能的transition layers后将变为theta X m个。
+
+作者在论文中将引入压缩参数的DenseNet称为DenseNet-C，而将同时引入bottleck layers与压缩参数的DenseNet称为DenseNet-BC。
+
+## 实现细节
+
+下表中为用于ImageNet training的DenseNet的框架实现细节。
+
+![用于ImageNet_训练的DenseNet框架细节]
+
+[用于ImageNet_训练的DenseNet框架细节]: images/-ImageNet_-DenseNet-.JPG "用于ImageNet_训练的DenseNet框架细节" { width:auto; max-width:90% }
+
+## 模型训练
+
+作者共对CIFAR-10/CIFAR-100/SVHN/ImageNet等五个数据集进行了实验。而对每个数据集，所用的DenseNet网络及训练所用的超参都各不相同。显然对于不同的实际问题需要使用不同的模型，这亦是各大公司中data scientist存在的意义，呵呵。
+
+对于CIFAR与SVHN数据集，作者使用的bs分别64，分别跑300与40个epochs。初始learning rate为0.1，然后训练到50%及75%时接连减少10倍。
+
+对于ImageNet，作者使用的bs为256，跑了90个epochs（这一数目与其它网络相似）。初始learning rate为0.1，然后训练到第30个及第60个epochs的时候分别减少10倍。而具体优化算法则使用的是Nesterov(Momentum optimization的一种)。
+
+
+# 实验结果
+
+下表所示为最终DenseNet与当下流利分类CNN网络之间的精度比较。
+
+![DenseNet与其它训练网络之间的分类精度比较]
+
+# 代码分析
+
+如下为caffe表示的DenseNet的第一个Dense block的结构。（突然发表caffe的文本结构虽然表示能力十足，但在阐述或修改时实在太不直观了，或者这也是为何Python脚本愈来愈多地被用于进行model表示的一个直接原因吧。。）
+
+```
+layer {
+  name: "conv2_1/x1/bn"
+  type: "BatchNorm"
+  bottom: "pool1"
+  top: "conv2_1/x1/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_1/x1/scale"
+  type: "Scale"
+  bottom: "conv2_1/x1/bn"
+  top: "conv2_1/x1/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_1/x1"
+  type: "ReLU"
+  bottom: "conv2_1/x1/bn"
+  top: "conv2_1/x1/bn"
+}
+layer {
+  name: "conv2_1/x1"
+  type: "Convolution"
+  bottom: "conv2_1/x1/bn"
+  top: "conv2_1/x1"
+  convolution_param {
+    num_output: 128
+    bias_term: false
+    kernel_size: 1
+  }
+}
+layer {
+  name: "conv2_1/x2/bn"
+  type: "BatchNorm"
+  bottom: "conv2_1/x1"
+  top: "conv2_1/x2/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_1/x2/scale"
+  type: "Scale"
+  bottom: "conv2_1/x2/bn"
+  top: "conv2_1/x2/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_1/x2"
+  type: "ReLU"
+  bottom: "conv2_1/x2/bn"
+  top: "conv2_1/x2/bn"
+}
+layer {
+  name: "conv2_1/x2"
+  type: "Convolution"
+  bottom: "conv2_1/x2/bn"
+  top: "conv2_1/x2"
+  convolution_param {
+    num_output: 32
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+  }
+}
+layer {
+  name: "concat_2_1"
+  type: "Concat"
+  bottom: "pool1"
+  bottom: "conv2_1/x2"
+  top: "concat_2_1"
+}
+layer {
+  name: "conv2_2/x1/bn"
+  type: "BatchNorm"
+  bottom: "concat_2_1"
+  top: "conv2_2/x1/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_2/x1/scale"
+  type: "Scale"
+  bottom: "conv2_2/x1/bn"
+  top: "conv2_2/x1/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_2/x1"
+  type: "ReLU"
+  bottom: "conv2_2/x1/bn"
+  top: "conv2_2/x1/bn"
+}
+layer {
+  name: "conv2_2/x1"
+  type: "Convolution"
+  bottom: "conv2_2/x1/bn"
+  top: "conv2_2/x1"
+  convolution_param {
+    num_output: 128
+    bias_term: false
+    kernel_size: 1
+  }
+}
+layer {
+  name: "conv2_2/x2/bn"
+  type: "BatchNorm"
+  bottom: "conv2_2/x1"
+  top: "conv2_2/x2/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_2/x2/scale"
+  type: "Scale"
+  bottom: "conv2_2/x2/bn"
+  top: "conv2_2/x2/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_2/x2"
+  type: "ReLU"
+  bottom: "conv2_2/x2/bn"
+  top: "conv2_2/x2/bn"
+}
+layer {
+  name: "conv2_2/x2"
+  type: "Convolution"
+  bottom: "conv2_2/x2/bn"
+  top: "conv2_2/x2"
+  convolution_param {
+    num_output: 32
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+  }
+}
+layer {
+  name: "concat_2_2"
+  type: "Concat"
+  bottom: "concat_2_1"
+  bottom: "conv2_2/x2"
+  top: "concat_2_2"
+}
+layer {
+  name: "conv2_3/x1/bn"
+  type: "BatchNorm"
+  bottom: "concat_2_2"
+  top: "conv2_3/x1/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_3/x1/scale"
+  type: "Scale"
+  bottom: "conv2_3/x1/bn"
+  top: "conv2_3/x1/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_3/x1"
+  type: "ReLU"
+  bottom: "conv2_3/x1/bn"
+  top: "conv2_3/x1/bn"
+}
+layer {
+  name: "conv2_3/x1"
+  type: "Convolution"
+  bottom: "conv2_3/x1/bn"
+  top: "conv2_3/x1"
+  convolution_param {
+    num_output: 128
+    bias_term: false
+    kernel_size: 1
+  }
+}
+layer {
+  name: "conv2_3/x2/bn"
+  type: "BatchNorm"
+  bottom: "conv2_3/x1"
+  top: "conv2_3/x2/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_3/x2/scale"
+  type: "Scale"
+  bottom: "conv2_3/x2/bn"
+  top: "conv2_3/x2/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_3/x2"
+  type: "ReLU"
+  bottom: "conv2_3/x2/bn"
+  top: "conv2_3/x2/bn"
+}
+layer {
+  name: "conv2_3/x2"
+  type: "Convolution"
+  bottom: "conv2_3/x2/bn"
+  top: "conv2_3/x2"
+  convolution_param {
+    num_output: 32
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+  }
+}
+layer {
+  name: "concat_2_3"
+  type: "Concat"
+  bottom: "concat_2_2"
+  bottom: "conv2_3/x2"
+  top: "concat_2_3"
+}
+layer {
+  name: "conv2_4/x1/bn"
+  type: "BatchNorm"
+  bottom: "concat_2_3"
+  top: "conv2_4/x1/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_4/x1/scale"
+  type: "Scale"
+  bottom: "conv2_4/x1/bn"
+  top: "conv2_4/x1/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_4/x1"
+  type: "ReLU"
+  bottom: "conv2_4/x1/bn"
+  top: "conv2_4/x1/bn"
+}
+layer {
+  name: "conv2_4/x1"
+  type: "Convolution"
+  bottom: "conv2_4/x1/bn"
+  top: "conv2_4/x1"
+  convolution_param {
+    num_output: 128
+    bias_term: false
+    kernel_size: 1
+  }
+}
+layer {
+  name: "conv2_4/x2/bn"
+  type: "BatchNorm"
+  bottom: "conv2_4/x1"
+  top: "conv2_4/x2/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_4/x2/scale"
+  type: "Scale"
+  bottom: "conv2_4/x2/bn"
+  top: "conv2_4/x2/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_4/x2"
+  type: "ReLU"
+  bottom: "conv2_4/x2/bn"
+  top: "conv2_4/x2/bn"
+}
+layer {
+  name: "conv2_4/x2"
+  type: "Convolution"
+  bottom: "conv2_4/x2/bn"
+  top: "conv2_4/x2"
+  convolution_param {
+    num_output: 32
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+  }
+}
+layer {
+  name: "concat_2_4"
+  type: "Concat"
+  bottom: "concat_2_3"
+  bottom: "conv2_4/x2"
+  top: "concat_2_4"
+}
+layer {
+  name: "conv2_5/x1/bn"
+  type: "BatchNorm"
+  bottom: "concat_2_4"
+  top: "conv2_5/x1/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_5/x1/scale"
+  type: "Scale"
+  bottom: "conv2_5/x1/bn"
+  top: "conv2_5/x1/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_5/x1"
+  type: "ReLU"
+  bottom: "conv2_5/x1/bn"
+  top: "conv2_5/x1/bn"
+}
+layer {
+  name: "conv2_5/x1"
+  type: "Convolution"
+  bottom: "conv2_5/x1/bn"
+  top: "conv2_5/x1"
+  convolution_param {
+    num_output: 128
+    bias_term: false
+    kernel_size: 1
+  }
+}
+layer {
+  name: "conv2_5/x2/bn"
+  type: "BatchNorm"
+  bottom: "conv2_5/x1"
+  top: "conv2_5/x2/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_5/x2/scale"
+  type: "Scale"
+  bottom: "conv2_5/x2/bn"
+  top: "conv2_5/x2/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_5/x2"
+  type: "ReLU"
+  bottom: "conv2_5/x2/bn"
+  top: "conv2_5/x2/bn"
+}
+layer {
+  name: "conv2_5/x2"
+  type: "Convolution"
+  bottom: "conv2_5/x2/bn"
+  top: "conv2_5/x2"
+  convolution_param {
+    num_output: 32
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+  }
+}
+layer {
+  name: "concat_2_5"
+  type: "Concat"
+  bottom: "concat_2_4"
+  bottom: "conv2_5/x2"
+  top: "concat_2_5"
+}
+layer {
+  name: "conv2_6/x1/bn"
+  type: "BatchNorm"
+  bottom: "concat_2_5"
+  top: "conv2_6/x1/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_6/x1/scale"
+  type: "Scale"
+  bottom: "conv2_6/x1/bn"
+  top: "conv2_6/x1/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_6/x1"
+  type: "ReLU"
+  bottom: "conv2_6/x1/bn"
+  top: "conv2_6/x1/bn"
+}
+layer {
+  name: "conv2_6/x1"
+  type: "Convolution"
+  bottom: "conv2_6/x1/bn"
+  top: "conv2_6/x1"
+  convolution_param {
+    num_output: 128
+    bias_term: false
+    kernel_size: 1
+  }
+}
+layer {
+  name: "conv2_6/x2/bn"
+  type: "BatchNorm"
+  bottom: "conv2_6/x1"
+  top: "conv2_6/x2/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_6/x2/scale"
+  type: "Scale"
+  bottom: "conv2_6/x2/bn"
+  top: "conv2_6/x2/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_6/x2"
+  type: "ReLU"
+  bottom: "conv2_6/x2/bn"
+  top: "conv2_6/x2/bn"
+}
+layer {
+  name: "conv2_6/x2"
+  type: "Convolution"
+  bottom: "conv2_6/x2/bn"
+  top: "conv2_6/x2"
+  convolution_param {
+    num_output: 32
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+  }
+}
+layer {
+  name: "concat_2_6"
+  type: "Concat"
+  bottom: "concat_2_5"
+  bottom: "conv2_6/x2"
+  top: "concat_2_6"
+}
+```
+
+下面为dense block2与dense block3之间的transition layers集合。
+
+```
+layer {
+  name: "conv2_blk/bn"
+  type: "BatchNorm"
+  bottom: "concat_2_6"
+  top: "conv2_blk/bn"
+  batch_norm_param {
+    eps: 1e-5
+  }
+}
+layer {
+  name: "conv2_blk/scale"
+  type: "Scale"
+  bottom: "conv2_blk/bn"
+  top: "conv2_blk/bn"
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "relu2_blk"
+  type: "ReLU"
+  bottom: "conv2_blk/bn"
+  top: "conv2_blk/bn"
+}
+layer {
+  name: "conv2_blk"
+  type: "Convolution"
+  bottom: "conv2_blk/bn"
+  top: "conv2_blk"
+  convolution_param {
+    num_output: 128
+    bias_term: false
+    kernel_size: 1
+  }
+}
+layer {
+  name: "pool2"
+  type: "Pooling"
+  bottom: "conv2_blk"
+  top: "pool2"
+  pooling_param {
+    pool: AVE
+    kernel_size: 2
+    stride: 2
+  }
+}
+```
+
+# 参考文献
+
+* Densely Connected Convolutional Networks, Gao-Huang, 2018
+* https://github.com/liuzhuang13/DenseNet
