@@ -1,0 +1,112 @@
+Title         : 精简CNN模型系列之六：ShuffleNet v2
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+才不久才刚刚写了MobileNet v2的博客，它来自Google。而今天看过了ShuffleNet v2，很是感慨。这篇来自Face++ Sun, Jian团队的paper与Google团行们的作品相比真正是有着鸿泥之别啊。Google的paper大多立足于理论挖掘，提出些似是而非的东东，然后再用实验结果立图去证其非伪，确实难懂，一般情况你不反复读个两、三遍是不会吃透的。。Face++的则立足于实际（可能是因为中国人写的英文比较合乎国人的思维习惯吧），一点点，娓娓道来，一切看上去顺理成章，翻过一遍就能让人恍然大悟，对其妙处更是击节赞赏半天不已。
+
+以往的移动端的CNN设计在考虑计算节省时都直接致力于优化整体网络计算所需的Flops。但实际上一个网络模型的训练或推理过程Flops等计算只是其时间的一部分，其它像内存读写/外部数据IO操作等都会占不小比例的时间。为实际生产考虑，我们不应只限于去片面追求理论Flops的减少，更应该去看所设计的网络实际部署在不同类型芯片上时却具有的实际时间消耗。
+
+在ShuffleNet v2这篇paper中，作者们重点分析了影响在GPU/ARM两种平台上CNN网络计算性能的几个主要指标，并提出了一些移动端CNN网络设计的指导准则（呵呵，这一点做法像是来自于Inception系列或者MobileNet系列文章啊），最终将这些指导准则应用于ShuffleNet v1网络的改良就行成了本篇所讲的ShuffleNet v2。在分类与目标检测等通用任务时与其它流利移动端网络相比，它都取得了不俗的性能。
+
+![ShuffleNet_v2与其它移动端网络在准确率_FPS及FLOPs上的比较]
+
+[ShuffleNet_v2与其它移动端网络在准确率_FPS及FLOPs上的比较]: images/ShuffleNet_v2-_FPS-FLOPs-.JPG "ShuffleNet_v2与其它移动端网络在准确率_FPS及FLOPs上的比较" { width:auto; max-width:90% }
+
+# 高效CNN网络设计的几个指导准则
+
+这篇Paper让做网络优化的工程师读起来会感觉特别亲切，因为它足够地贴地气，像极了平时对应用程序的优化过程。即先对应用程序进行hotspots分析，看时间主要耗在了哪里。然后就分析各个hotspot的原因，再针对性地提出优化办法以减少整体所需的时间从而达到最终的性能指标。
+
+## CNN网络时间消耗分析
+
+下图中分析了ShuffleNet v1与MobileNet v2这两个移动端流行网络在GPU/ARM两种平台下的时间消耗分布。
+
+![ShuffleNet_V1与MobileNet_V2上的时间消耗分析]
+
+[ShuffleNet_V1与MobileNet_V2上的时间消耗分析]: images/ShuffleNet_V1-MobileNet_V2-.JPG "ShuffleNet_V1与MobileNet_V2上的时间消耗分析" { width:auto; max-width:90% }
+
+从上图中可看出Conv等计算密集型操作占了其时间的绝大多数，但其它像Elemwise/Data IO等内存读写密集型操作也占了相当比例的时间，因此像以往那样一味以FLOPs来作为指导准则来设计CNN网络是不完备的，虽然它可以反映出占大比例时间的Conv操作。
+
+## 高效CNN网络设计的四个准则
+
+* 当输入、输出channels数目相同时，conv计算所需的MAC(memory access cost)最为节省。
+
+作者们在paper中从理论与实验上证明了此一准则的有效。以下关系表示了MAC与FLOPs(B)及输入、输出channels数目之间的关系。
+
+![输入-输出channels数目与MAC之间的关系]
+
+[输入-输出channels数目与MAC之间的关系]: images/---channels-MAC-.JPG "输入-输出channels数目与MAC之间的关系" { width:auto; max-width:90% }
+
+
+下表为其实验佐证。
+
+![Input_output_channels_数目与MAC之间的关系]
+
+[Input_output_channels_数目与MAC之间的关系]: images/Input_output_channels_-MAC-.JPG "Input_output_channels_数目与MAC之间的关系" { width:auto; max-width:90% }
+
+* 过多的Group convolution会加大MAC开销。
+
+下面公式表明了在Group convolution操作中MAC与g之间的正比例关系。
+
+![MAC与group_convolution中g的正比例关系]
+
+[MAC与group_convolution中g的正比例关系]: images/MAC-group_convolution-g-.JPG "MAC与group_convolution中g的正比例关系" { width:auto; max-width:90% }
+
+下表结果则为其实验佐证。
+
+![group_convolution中groups_数目与MAC之间的关系]
+
+[group_convolution中groups_数目与MAC之间的关系]: images/group_convolution-groups_-MAC-.JPG "group_convolution中groups_数目与MAC之间的关系" { width:auto; max-width:90% }
+
+* 网络结构整体的碎片化会减少其可并行优化的程序。
+
+下表为作者在GPU/ARM两种平台上设计的分析并行/串行两种网络碎片方式对整体FPS所可能具有的影响。
+
+![网络碎片化程度对FPS的影响结果]
+
+[网络碎片化程度对FPS的影响结果]: images/-FPS-.JPG "网络碎片化程度对FPS的影响结果" { width:auto; max-width:90% }
+
+* Element-wise操作会消耗较多的时间，不可小视。
+
+Element-wise操作是一种典型的memory access密集操作。所以它对整个网络计算所需的时间影响也挺大，不可轻视。下表为使用Element-wise操作前后网络所具有的FPS结果。
+
+![Element-wise_OP对网络计算时间的显著影响]
+
+[Element-wise_OP对网络计算时间的显著影响]: images/Element-wise_OP-.JPG "Element-wise_OP对网络计算时间的显著影响" { width:auto; max-width:90% }
+
+# ShuffleNet v2
+
+## ShuffleNet v1分析
+
+在ShuffleNet v1的操作中充满了对上述章节介绍过的四个设计准则的违反。首先它使用了bottleneck 1x1 group conv与module最后的1x1 group conv pointwise模块，使得input channels数目与output channels数目差别较大，违反了上述规则一与规则二；其次由于它整体网络结构中过多的group conv操作的使用从而违反了上述规则三；最后类似于Residual模块中的大量Element-wise sum的使用则进而违反了上述规则四。
+
+## ShuffleNet v2的设计
+
+ShuffleNet v2中弃用了1x1的group convolution操作，而直接使用了input/output channels数目相同的1x1普通conv。它更是提出了一种ChannelSplit新的类型操作，将module的输入channels分为两部分，一部分直接向下传递，另外一部分则进行真正的向后计算。到了module的末尾，直接将两分支上的output channels数目级连起来，从而规避了原来ShuffleNet v1中Element-wise sum的操作。然后我们再对最终输出的output feature maps进行RandomShuffle操作，从而使得各channels之间的信息相互交通。。精彩至极，看至此处已然拍案叫绝。
+
+跟ShuffleNet v1一样，它也提供了一种需要downsampling的模块变形。为了保证在下采样的时候增加整体输出channels数目，它取消了模块最开始时的RandomSplit操作，从而将信处向下分别处理后再拼结，使得最终outptu channels数目实现翻倍。
+
+说了一大通，更是直接看下图吧。下图中的a/b为原ShuffleNet v1中具有的两种模块结构。图c/d则为ShuffleNet v2中的模块设计。
+
+![ShuffleNet_V2的模块设计与ShuffleNet_V1的对比]
+
+[ShuffleNet_V2的模块设计与ShuffleNet_V1的对比]: images/ShuffleNet_V2-ShuffleNet_V1-.JPG "ShuffleNet_V2的模块设计与ShuffleNet_V1的对比" { width:auto; max-width:90% }
+
+下表为ShuffleNet v2的整体网络结构。它亦具有MobileNet系列模型中所使用过的缩减系数来控制accuracy与efficiency之间的平衡。
+
+![ShuffleNet_v2的整体网络结构]
+
+[ShuffleNet_v2的整体网络结构]: images/ShuffleNet_v2-.JPG "ShuffleNet_v2的整体网络结构" { width:auto; max-width:90% }
+
+# 实验结果
+
+下表中涵盖了Paper中进行的广泛实验。从中可看出ShuffleNet v2相对其它移动端网络所具有的分类精度及计算效率上的性能优势。
+
+![ShuffleNet_v2与其它网络在分类精度及时间复杂性与模型大小上的比较]
+
+# 参考文献
+
+* ShuffleNet V2: Practical Guidelines for Efficient CNN Architecture Design, Ningning-Ma, 2018
