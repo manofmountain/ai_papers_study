@@ -1,0 +1,42 @@
+Title         : Semantic Segmentation系列其二：U-Net
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍 
+
+U-Net是15年出来的在显微组织切片细胞分割领域大获成功的一个CNN segmentation模型。它借鉴了当时新提出不久的FCN网络，进一步有效利用了各个尺度context feature map所具有的信息，充分使用了各种可行的
+数据增强的手段，在生物细胞组织切片这种精度高、物体数目密集的图片数据集上获得了较好的效果。
+
+关于FCN的具体情况，可参考区区的此篇博文：Semantic segmentation系列其一：FCN。
+
+U-Net网络本质上就是一个FCN。但它也有些值得赞许的地方像通过在Conv中使用valid padding，使得feature map经过conv层时不断减少两个边缘像素；最终几经裁减并下采样的feature map获得了我们想要的mask 
+map的大小。它的具体网络结构请见下图。
+
+![U-Net网络架构]
+
+[U-Net网络架构]: images/U-Net-.PNG "U-Net网络架构" { width:auto; max-width:90% }
+
+# U-Net
+
+或者U-Net中最值得一说的是它处理像生物组织切片此类数据的有效方式及所使用的有些特点的loss函数吧。
+
+## 数据输入
+
+笔者因为客户项目需求也增接触过某种类型的人体显微组织切片数据。项目需求是找到一种好的方案来定位出切片上的有问题细胞区域并给出初步判断，标明此切片的阴、阳性类别。
+乍听上去并不难，像是一个典型的object detection或者复杂一点那就是semantic segmentation的问题。可它的数据却并非像我们平时玩坏了的Imagenet、Cifar10/100或者COCO/VOC那样‘正规’。。客户给我们的数据集
+甚至标注都存在问题，要么有些图片标注不全（漏标），要么就是标注错误（错标）（可能是请老专家们费力盯着切片去标时钱没给够吧！）。每张图片更是有数百万个像素，单个图片文件大小有几个GB。
+
+碰到这样的需求你会如何做呢？不过多讨论，先看下U-Net作者们的做法。可能会有些借鉴吧。
+
+首先，它们将大的图片按照Tiling的方式切成许多个patch，然后再将patch作为网络的输入。因为Segmentation对图片之上物体的位置要求极其严格，因此使用Valid padding的方式对feature maps进行conv操作、处理。
+这意味着我们需要让输入的patch有着更大的context，如此才能保证图片经过一层层conv的去border（因为valid padding的使用）最终也能保证其位置信息正确。
+
+如下为U-Net在对输入图片进行overlapping patch处理的方式。
+
+
+# 参考文献
+
+* U-Net: Convolutional Networks for Biomedical Image Segmentation, Olaf-Ronneberger, 2015
+* https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net/
