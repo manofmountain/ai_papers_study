@@ -36,6 +36,127 @@ map的大小。它的具体网络结构请见下图。
 如下为U-Net在对输入图片进行overlapping patch处理的方式。
 
 
+## 数据预处理
+
+一般像这种生物类的切片数据集成本都较高（隐私、标注成本等），所以数据集规模都不会太大。为此需要多用些data augmentation的方法才能保证数据集对模型的充分拟合。
+本篇中作者用的data augmentation方法有：shift/rotation（比如多些不同类型的角度旋转），进行些平滑过滤、变形等（被证明为在使用小的数据集时极其有效。）。
+
+## 网络结构
+
+从开篇图中亦可看出U-Net网络起的名字确实是名符其实。它共有两个Patch组成，一条为contracting path(left side)，它主要是典型的CNN特征提取网络（用于逐级精炼、提取特征）；另一条则为expansive path，用于使用
+contracting path得到的不同尺度、级别的特征进一步上采样、变形、转换为高精度的mask map。
+
+从里面隐约已经看出了后来的DSSD模型与FPN模型中使用的结构的影子。
+
+## 模型训练
+
+在训练时，我们通过在使用输入的label mask map与最终网络输出的结果mask map之间逐个元素进行cross-entropy求和来得到loss，并进行backward propagation计算。
+如下为loss函数计算公式。
+
+![Loss_函数计算公式]
+
+[Loss_函数计算公式]: images/Loss_-.PNG "Loss_函数计算公式" { width:auto; max-width:90% }
+
+有趣的是为了更好地学习出细胞间的细小分隔元素（以更好地表示细胞间的边缘），作者在loss函数计算时附加了一个反映元素级别位置的权重矩阵（w(x)，x为图片上的每一个像素)。
+
+其中w(x)的值则是根据训练数据集中所知的segmentation map的类别情况及其上像素分布位置而定的。它的计算公式如下：
+
+![权重矩阵计算公式]
+
+[权重矩阵计算公式]: images/-.PNG "权重矩阵计算公式" { width:auto; max-width:90% }
+
+乍看时感觉像是在使用先验的标注信息，有些像是作弊。可一思考它好像也符合机器学习的一贯做法，像Yolo v2中使用的对训练数据集中的所有ground truth box进行聚类以获得其prior box 合理width/height的做法不也是如此嘛。
+
+# 实验结果
+
+下面是它对细胞组织切片的处理结果，可以直观感觉到它的效果。
+
+![细胞组织切片分割效果]
+
+最后下表为它在2015ISBI细胞定位大赛中与其它模型比较的结果。
+
+![U-Net在图片分割标准数据集上与其它模型的结果比较]
+
+# 代码分析
+
+下面是U-Net 的prototxt的构成。可见它是用的valid conv，同时在expand path中使用的上采样则是用了deconvolution。
+
+```
+name: 'phseg_v5'
+force_backward: true
+layers {                 top: 'data' top: 'label'  name: 'loaddata'       type: HDF5_DATA  hdf5_data_param { source: 'aug_deformed_phseg_v5.txt' batch_size: 1 } include: { phase: TRAIN }}
+
+layers { bottom: 'data'              top: 'd0b'   name: 'conv_d0a-b'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 64 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd0b'               top: 'd0b'   name: 'relu_d0b'       type: RELU }
+layers { bottom: 'd0b'               top: 'd0c'   name: 'conv_d0b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 64 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd0c'               top: 'd0c'   name: 'relu_d0c'       type: RELU }
+
+layers { bottom: 'd0c'               top: 'd1a'   name: 'pool_d0c-1a'    type: POOLING  pooling_param { pool: MAX kernel_size: 2 stride: 2 } }
+layers { bottom: 'd1a'               top: 'd1b'   name: 'conv_d1a-b'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 128 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd1b'               top: 'd1b'   name: 'relu_d1b'       type: RELU }
+layers { bottom: 'd1b'               top: 'd1c'   name: 'conv_d1b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 128 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd1c'               top: 'd1c'   name: 'relu_d1c'       type: RELU }
+
+layers { bottom: 'd1c'               top: 'd2a'   name: 'pool_d1c-2a'    type: POOLING  pooling_param { pool: MAX kernel_size: 2 stride: 2 } }
+layers { bottom: 'd2a'               top: 'd2b'   name: 'conv_d2a-b'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 256 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd2b'               top: 'd2b'   name: 'relu_d2b'       type: RELU }
+layers { bottom: 'd2b'               top: 'd2c'   name: 'conv_d2b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 256 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd2c'               top: 'd2c'   name: 'relu_d2c'       type: RELU }
+
+layers { bottom: 'd2c'               top: 'd3a'   name: 'pool_d2c-3a'    type: POOLING  pooling_param { pool: MAX kernel_size: 2 stride: 2 } }
+layers { bottom: 'd3a'               top: 'd3b'   name: 'conv_d3a-b'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 512 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd3b'               top: 'd3b'   name: 'relu_d3b'       type: RELU }
+layers { bottom: 'd3b'               top: 'd3c'   name: 'conv_d3b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 512 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd3c'               top: 'd3c'   name: 'relu_d3c'       type: RELU }
+layers { bottom: 'd3c'               top: 'd3c'   name: 'dropout_d3c'    type: DROPOUT dropout_param { dropout_ratio: 0.5 } include: { phase: TRAIN }}
+
+layers { bottom: 'd3c'               top: 'd4a'   name: 'pool_d3c-4a'    type: POOLING  pooling_param { pool: MAX kernel_size: 2 stride: 2 } }
+layers { bottom: 'd4a'               top: 'd4b'   name: 'conv_d4a-b'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 1024 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd4b'               top: 'd4b'   name: 'relu_d4b'       type: RELU }
+layers { bottom: 'd4b'               top: 'd4c'   name: 'conv_d4b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 1024 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'd4c'               top: 'd4c'   name: 'relu_d4c'       type: RELU }
+layers { bottom: 'd4c'               top: 'd4c'   name: 'dropout_d4c'    type: DROPOUT dropout_param { dropout_ratio: 0.5 } include: { phase: TRAIN }}
+
+layers { bottom: 'd4c'               top: 'u3a'   name: 'upconv_d4c_u3a' type: DECONVOLUTION blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 512 pad: 0 kernel_size: 2 stride: 2 weight_filler { type: 'xavier' }} }
+layers { bottom: 'u3a'               top: 'u3a'   name: 'relu_u3a'       type: RELU }
+layers { bottom: 'd3c' bottom: 'u3a' top: 'd3cc'  name: 'crop_d3c-d3cc'  type: CROP }
+layers { bottom: 'u3a' bottom: 'd3cc' top: 'u3b'  name: 'concat_d3cc_u3a-b'  type: CONCAT }
+layers { bottom: 'u3b'               top: 'u3c'   name: 'conv_u3b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 512 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'u3c'               top: 'u3c'   name: 'relu_u3c'       type: RELU }
+layers { bottom: 'u3c'               top: 'u3d'   name: 'conv_u3c-d'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 512 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'u3d'               top: 'u3d'   name: 'relu_u3d'       type: RELU }
+
+layers { bottom: 'u3d'               top: 'u2a'   name: 'upconv_u3d_u2a' type: DECONVOLUTION blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 256 pad: 0 kernel_size: 2 stride: 2 weight_filler { type: 'xavier' }} }
+layers { bottom: 'u2a'               top: 'u2a'   name: 'relu_u2a'       type: RELU }
+layers { bottom: 'd2c' bottom: 'u2a' top: 'd2cc'  name: 'crop_d2c-d2cc'  type: CROP }
+layers { bottom: 'u2a' bottom: 'd2cc' top: 'u2b'   name: 'concat_d2cc_u2a-b'  type: CONCAT }
+layers { bottom: 'u2b'               top: 'u2c'   name: 'conv_u2b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 256 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'u2c'               top: 'u2c'   name: 'relu_u2c'       type: RELU }
+layers { bottom: 'u2c'               top: 'u2d'   name: 'conv_u2c-d'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 256 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'u2d'               top: 'u2d'   name: 'relu_u2d'       type: RELU }
+
+layers { bottom: 'u2d'               top: 'u1a'   name: 'upconv_u2d_u1a' type: DECONVOLUTION blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 128 pad: 0 kernel_size: 2 stride: 2 weight_filler { type: 'xavier' }} }
+layers { bottom: 'u1a'               top: 'u1a'   name: 'relu_u1a'       type: RELU }
+layers { bottom: 'd1c' bottom: 'u1a' top: 'd1cc'  name: 'crop_d1c-d1cc'  type: CROP }
+layers { bottom: 'u1a' bottom: 'd1cc' top: 'u1b'   name: 'concat_d1cc_u1a-b'  type: CONCAT }
+layers { bottom: 'u1b'               top: 'u1c'   name: 'conv_u1b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 128 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'u1c'               top: 'u1c'   name: 'relu_u1c'       type: RELU }
+layers { bottom: 'u1c'               top: 'u1d'   name: 'conv_u1c-d'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 128 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'u1d'               top: 'u1d'   name: 'relu_u1d'       type: RELU }
+
+layers { bottom: 'u1d'               top: 'u0a'   name: 'upconv_u1d_u0a' type: DECONVOLUTION blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 128 pad: 0 kernel_size: 2 stride: 2 weight_filler { type: 'xavier' }} }
+layers { bottom: 'u0a'               top: 'u0a'   name: 'relu_u0a'       type: RELU }
+layers { bottom: 'd0c' bottom: 'u0a' top: 'd0cc'  name: 'crop_d0c-d0cc'  type: CROP }
+layers { bottom: 'u0a' bottom: 'd0cc' top: 'u0b'   name: 'concat_d0cc_u0a-b'  type: CONCAT }
+layers { bottom: 'u0b'               top: 'u0c'   name: 'conv_u0b-c'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 64 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'u0c'               top: 'u0c'   name: 'relu_u0c'       type: RELU }
+layers { bottom: 'u0c'               top: 'u0d'   name: 'conv_u0c-d'     type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { num_output: 64 pad: 0 kernel_size: 3 engine: CAFFE weight_filler { type: 'xavier' }} }
+layers { bottom: 'u0d'               top: 'u0d'   name: 'relu_u0d'       type: RELU }
+
+layers { bottom: 'u0d'               top: 'score' name: 'conv_u0d-score' type: CONVOLUTION  blobs_lr: 1 blobs_lr: 2 weight_decay: 1 weight_decay: 0  convolution_param { engine: CAFFE num_output: 2 pad: 0 kernel_size: 1 weight_filler { type: 'xavier' }} }
+layers { bottom: 'score' bottom: 'label' top: 'loss'  name: 'loss'   type: SOFTMAX_LOSS loss_param { ignore_label: 2 }include: { phase: TRAIN }}
+```
+
 # 参考文献
 
 * U-Net: Convolutional Networks for Biomedical Image Segmentation, Olaf-Ronneberger, 2015
