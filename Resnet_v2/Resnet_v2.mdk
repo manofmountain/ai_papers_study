@@ -1,0 +1,131 @@
+Title         : 经典分类CNN模型系列其九：Resnet v2
+Author        : manofmountain
+Logo          : True
+
+[TITLE]
+
+# 介绍
+
+Resnet模型可谓是CNN分类模型中效果最效、应用最广泛、在业界最为成功的深度学习模型之一。
+它出道以来有许多的变形。像最初论文中提出的Resnet v1，后来由Torch framework实现中改良过的Resnet v1.5，以及今天在这篇博文里将要详细描述的Resnet v2。
+
+# Resnet v1
+
+对于Resnet v1，大家应该不陌生。区区也曾在此系列的一篇博文中有详细讲述过它（可见经典分类CNN模型系列其四：Resnet)。
+当然在处理不同类型数据集（如CIFAR10或Imagenet）时，它一般会有两种不同的类型表示。如下图所示，分别为用于处理CIFAR10与Imagenet的Resnet v1中所用的Residual模块。
+
+
+![不同的Resnet_v1_残差模块]
+
+[不同的Resnet_v1_残差模块]: images/-Resnet_v1_-.PNG "不同的Resnet_v1_残差模块" { width:auto; max-width:90% }
+
+
+可以看同它们的主要差别在于处理Imagenet这种较复杂case时，为了计算量减省考虑，而引入了1x1 conv的bottleneck模块。
+
+# Resnet v1.5
+
+Data scientist在实用Torch来实现Resnet v1时，发现若在下采样时将原来在1x1 conv上作的工作挪到中间的3x3 conv上来进行（即使3x3 conv的步长为2），可以比原来的Resnet v1实现
+得到更快、更好、更稳定的结果。当下的所谓Resnet v1实现本质上都已经是这里说的最先在Torch上实现过的Resnet v1.5。
+
+但是因为它将下采样的工作向后推迟到了中间的3x3，因此每次训练iteration，它需要花去更多的时间，算下来整个training需要的时间其实它比原来的Resnet v1实现还要多上12%，另外其在
+进行后期推理工作时也会使得整个throughput下降约6%。但为此而换来的准确率的稳定提升还是值得的。
+
+# Resnet v2
+
+Resnet v2是Resnet v1原来那帮Microsoft的作者们进一步研究、理论分析Residual模块及它在整体网络上的结构，并对它进行大量实现论证后得到的成果。
+只看其残差模块与Resnet v1中所使用的差别还是挺简单的，可见于下图。
+
+![Resnet_v2与Resnet_v1所使用的残差模块的区别及它们的不同训练表现]
+
+[Resnet_v2与Resnet_v1所使用的残差模块的区别及它们的不同训练表现]: images/Resnet_v2-Resnet_v1-.PNG "Resnet_v2与Resnet_v1所使用的残差模块的区别及它们的不同训练表现" { width:auto; max-width:90% }
+
+
+简言之，在Resnet v2中它将BN/ReLu这些activation操作挪到了Conv（真正的weights filter操作）之前。
+
+如果你只是想明白Resnet v2与Resnet v1之间的区别，以便于决定去自己使用，那么看到此就已足够了，不必再向下看，多余的时间大可以去踢踢球，听听歌，读些金庸。。
+（致敬94岁后含笑而逝的文化巨人，作为80后的一员，我曾读过他的每一本小说，精神曾在他塑造的武侠世界中很是享受过。）。
+
+如果你想明白为何要这样做，并想学习下别人是如何针对具体问题是如何理论上分析，并不断设计改进的模型进行实验的，那么可以接着向下读。
+
+# Identity mapping函数的最优选择
+
+## Identity mapping理论上的优势
+
+首先先上来一串与残差模块相关的一串公式吧。
+
+下面公式1，2表示了典型的残差模块概念。y~l~为l层elementwise sum后的输出，x~l~为此层的输入，F(x~l~, W~t~)为残差处理模块（就是1x1 conv -> 3x3 conv ->1x1 conv的这坨东东）。
+然后x~l+1~表示的是第l+1层的输入，它是通过对l层的输出进行f函数变换后得到的（在Resnet v1中f为ReLu）。h为Identity mapping，在Resnet v1中直接将h(x~l~) = x~l~这样处理了。
+
+![残差计算公式1与2]
+
+[残差计算公式1与2]: images/-1-2.PNG "残差计算公式1与2" { width:auto; max-width:90% }
+
+如果f也是identity mapping，像h一样直接将输出等于输入，那么可得到下式3。进行递归考虑整个模型又可得到公式4。
+
+![残差计算公式3与4]
+
+[残差计算公式3与4]: images/-3-4.PNG "残差计算公式3与4" { width:auto; max-width:90% }
+
+基于上面公式4与backward propagation，我们可以得到此时的gradient计算公式5。
+
+![残差计算公式5]
+
+[残差计算公式5]: images/-5.PNG "残差计算公式5" { width:auto; max-width:90% }
+
+至此公式总算可以告一段落了。总结下吧。
+
+从上面公式4与5中可以看出，在此模型下（直接将h作为identity mapping），信息可以从任一Unit向前或向后直接、透明地传输给下一Unit。
+
+## Idnetity mapping竞争对手的不堪
+
+作者为了表明Identity mapping在Residual模块中的最优，举了许多其它的h映射函数来进行理论与实现分析，结果它们纷纷败北，无一幸免。这五个阵亡者可见于下表。
+
+![几种不同的shortcut_connections变形]
+
+[几种不同的shortcut_connections变形]: images/-shortcut_connections-.PNG "几种不同的shortcut_connections变形" { width:auto; max-width:90% }
+
+下表为Identity mapping秒掉这些竞争对手的战绩。
+
+![Identity_mapping与其它Short_connections方式的结果比较]
+
+[Identity_mapping与其它Short_connections方式的结果比较]: images/Identity_mapping-Short_connections-.PNG "Identity_mapping与其它Short_connections方式的结果比较" { width:auto; max-width:90% }
+
+
+# Activation函数的输用
+
+在原来的Resnet v1中每个残差模块的elementwise sum后就会有一个ReLu activation。显然不能满足像上面分析过的那样将f作为identity mapping（直接 y = x）的需求。
+为了将Elementwise sum后的ReLu去掉，作者又开始动起了脑筋。他们试着将ReLu/BN这些Activation函数的位置不断变动（考虑到让残差能够表示其功能本身需要的（-∞， +∞)，同时也
+努力考虑pre-activation/after-activation可能对前后Residual模块的影响），如下为几经折腾后的几种变形与所得到的实验结果。
+
+![Residual模块中Activation函数在不同位置的使用]
+
+[Residual模块中Activation函数在不同位置的使用]: images/Residual-Activation-.PNG "Residual模块中Activation函数在不同位置的使用" { width:auto; max-width:90% }
+
+终于他们异常欣喜地发现在将BN + ReLu放到Conv之前后，模型训练的速度加块了、精度提高了、也更容易回避overfitting的问题了。（大功告成！）
+
+下面为Pre-activation residual unit的构造过程。
+
+![Pre-activation_Residual_unit构造过程]
+
+[Pre-activation_Residual_unit构造过程]: images/Pre-activation_Residual_unit-.PNG "Pre-activation_Residual_unit构造过程" { width:auto; max-width:90% }
+
+# 实验结果
+
+不论是CIFAR10，还是Imagenet上，拥有较多层的，使用了Pre-activation residual unit的resnet v2都取得了比resnet v1（或resnet v1.5）更好的结果。
+
+![CIFAR10上的分类结果]
+
+[CIFAR10上的分类结果]: images/CIFAR10-.PNG "CIFAR10上的分类结果" { width:auto; max-width:90% }
+
+下面可看出在Imagenet上Resnet v2即使与当时刚刚提出没多久的Inception v3相比结果也有不小优势。
+
+![Imagenet上分类的结果]
+
+[Imagenet上分类的结果]: images/Imagenet-.PNG "Imagenet上分类的结果" { width:auto; max-width:90% }
+
+# 参考文献
+
+* Deep Residual Learning for Image Recognition, Kaiming-He, 2015
+* Identity Mappings in Deep Residual Networks, Kaiming-He, 2016
+* https://github.com/mlperf/training/tree/master/image_classification/tensorflow/official/resnet
+* https://github.com/facebook/fb.resnet.torch
